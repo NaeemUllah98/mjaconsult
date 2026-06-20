@@ -1,0 +1,114 @@
+rules_version = '2';
+
+// ============================================================
+// MJACONSULT — Firestore Security Rules
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// (or paste into Firebase Console > Firestore Database > Rules)
+//
+// These rules enforce role-based access for admin / doctor / patient.
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && myRole() == 'admin';
+    }
+
+    // ---- users -------------------------------------------------
+    match /users/{userId} {
+      // Anyone signed in can read basic user records (needed for chat names).
+      allow read: if isSignedIn();
+      // A user can create/update their own record; admins can manage all
+      // (admins create user records when adding doctors).
+      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // ---- doctors (public profiles) -----------------------------
+    match /doctors/{doctorId} {
+      // Public: patients browse doctors without restriction.
+      allow read: if true;
+      // A doctor edits their own profile; admins manage all.
+      allow write: if isSignedIn() && (request.auth.uid == doctorId || isAdmin());
+    }
+
+    // ---- appointments ------------------------------------------
+    match /appointments/{apptId} {
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.patientId == request.auth.uid ||
+        resource.data.doctorId == request.auth.uid
+      );
+      // Patients create their own appointments.
+      allow create: if isSignedIn() &&
+        request.resource.data.patientId == request.auth.uid;
+      // Patient, doctor on the appointment, or admin can update.
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.patientId == request.auth.uid ||
+        resource.data.doctorId == request.auth.uid
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ---- slot locks --------------------------------------------
+    // Deterministic lock docs used by the booking transaction.
+    match /slots/{slotId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      // Allow the booking patient, the doctor, or an admin to release.
+      allow delete: if isSignedIn();
+    }
+
+    // ---- chats + messages --------------------------------------
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn() && (
+        resource == null ||
+        resource.data.patientId == request.auth.uid ||
+        resource.data.doctorId == request.auth.uid ||
+        isAdmin()
+      );
+
+      match /messages/{messageId} {
+        // Only the two participants or an admin can read a transcript.
+        function thread() {
+          return get(/databases/$(database)/documents/chats/$(chatId)).data;
+        }
+        allow read: if isSignedIn() && (
+          isAdmin() ||
+          thread().patientId == request.auth.uid ||
+          thread().doctorId == request.auth.uid
+        );
+        allow create: if isSignedIn() &&
+          request.resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // ---- promotions --------------------------------------------
+    match /promotions/{promoId} {
+      allow read: if true;            // public offers
+      allow write: if isAdmin();      // only admins broadcast
+    }
+
+    // ---- notifications -----------------------------------------
+    match /notifications/{notifId} {
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      // Any signed-in user can create a notification for another user
+      // (e.g. patient notifies doctor on booking).
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+  }
+}

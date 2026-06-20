@@ -1,0 +1,265 @@
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+  deleteDoc,
+  addDoc,
+  query,
+  where,
+  orderBy,
+  runTransaction,
+  serverTimestamp,
+  Timestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
+import * as demo from "./demo/backend";
+import type {
+  AppUser,
+  Doctor,
+  Appointment,
+  Promotion,
+  TimeSlot,
+} from "@/types";
+
+const DEMO = demo.DEMO;
+
+// ============================================================
+// Users
+// ============================================================
+
+export async function getUser(uid: string): Promise<AppUser | null> {
+  if (DEMO) return demo.demoGetUser(uid);
+  const snap = await getDoc(doc(db, "users", uid));
+  return snap.exists() ? ({ uid, ...snap.data() } as AppUser) : null;
+}
+
+export async function upsertUser(user: AppUser): Promise<void> {
+  if (DEMO) return demo.demoUpdateUser(user.uid, user);
+  const { uid, ...rest } = user;
+  await setDoc(
+    doc(db, "users", uid),
+    { ...rest, createdAt: rest.createdAt ?? serverTimestamp() },
+    { merge: true },
+  );
+}
+
+export async function updateUser(
+  uid: string,
+  patch: Partial<AppUser>,
+): Promise<void> {
+  if (DEMO) return demo.demoUpdateUser(uid, patch);
+  await updateDoc(doc(db, "users", uid), patch as any);
+}
+
+export async function listPatients(): Promise<AppUser[]> {
+  if (DEMO) return demo.demoListPatients();
+  const q = query(collection(db, "users"), where("role", "==", "patient"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as AppUser);
+}
+
+export async function deleteUserRecord(uid: string): Promise<void> {
+  if (DEMO) return demo.demoDeleteUser(uid);
+  await deleteDoc(doc(db, "users", uid));
+}
+
+/** All admin accounts (used to notify admins, e.g. on Meet-link requests). */
+export async function listAdmins(): Promise<AppUser[]> {
+  if (DEMO) return demo.demoListAdmins();
+  const q = query(collection(db, "users"), where("role", "==", "admin"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as AppUser);
+}
+
+// ============================================================
+// Doctors
+// ============================================================
+
+export async function getDoctor(uid: string): Promise<Doctor | null> {
+  if (DEMO) return demo.demoGetDoctor(uid);
+  const snap = await getDoc(doc(db, "doctors", uid));
+  return snap.exists() ? ({ uid, ...snap.data() } as Doctor) : null;
+}
+
+export async function listDoctors(activeOnly = false): Promise<Doctor[]> {
+  if (DEMO) return demo.demoListDoctors(activeOnly);
+  const snap = await getDocs(collection(db, "doctors"));
+  let docs = snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as Doctor);
+  if (activeOnly) docs = docs.filter((d) => d.active);
+  return docs;
+}
+
+export async function upsertDoctor(d: Doctor): Promise<void> {
+  if (DEMO) return demo.demoUpsertDoctor(d);
+  const { uid, ...rest } = d;
+  await setDoc(doc(db, "doctors", uid), rest, { merge: true });
+  await setDoc(
+    doc(db, "users", uid),
+    {
+      role: "doctor",
+      name: d.name,
+      email: d.email,
+      phone: d.phone ?? "",
+      photoURL: d.photoURL ?? "",
+      active: d.active,
+    },
+    { merge: true },
+  );
+}
+
+export async function setDoctorActive(
+  uid: string,
+  active: boolean,
+): Promise<void> {
+  if (DEMO) return demo.demoSetDoctorActive(uid, active);
+  await updateDoc(doc(db, "doctors", uid), { active });
+  await updateDoc(doc(db, "users", uid), { active });
+}
+
+export async function deleteDoctor(uid: string): Promise<void> {
+  if (DEMO) return demo.demoDeleteDoctor(uid);
+  await deleteDoc(doc(db, "doctors", uid));
+  await deleteDoc(doc(db, "users", uid));
+}
+
+// ============================================================
+// Appointments  (with atomic slot locking)
+// ============================================================
+
+const slotId = (doctorId: string, date: string, slot: TimeSlot) =>
+  `${doctorId}_${date}_${slot.start.replace(":", "")}`;
+
+export async function bookAppointment(
+  input: Omit<Appointment, "id" | "createdAt" | "updatedAt" | "status">,
+): Promise<string> {
+  if (DEMO) return demo.demoBookAppointment(input);
+  const lockRef = doc(db, "slots", slotId(input.doctorId, input.date, input.slot));
+  const apptRef = doc(collection(db, "appointments"));
+
+  await runTransaction(db, async (tx) => {
+    const lockSnap = await tx.get(lockRef);
+    if (lockSnap.exists() && lockSnap.data()?.taken) {
+      throw new Error("SLOT_TAKEN");
+    }
+    tx.set(lockRef, {
+      taken: true,
+      appointmentId: apptRef.id,
+      doctorId: input.doctorId,
+      patientId: input.patientId,
+      date: input.date,
+      slot: input.slot,
+      createdAt: serverTimestamp(),
+    });
+    tx.set(apptRef, {
+      ...input,
+      status: "confirmed",
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+
+  return apptRef.id;
+}
+
+export async function getTakenSlots(
+  doctorId: string,
+  date: string,
+): Promise<string[]> {
+  if (DEMO) return demo.demoGetTakenSlots(doctorId, date);
+  const q = query(
+    collection(db, "appointments"),
+    where("doctorId", "==", doctorId),
+    where("date", "==", date),
+  );
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => d.data() as Appointment)
+    .filter((a) => a.status !== "cancelled")
+    .map((a) => a.slot.start);
+}
+
+export async function updateAppointment(
+  id: string,
+  patch: Partial<Appointment>,
+): Promise<void> {
+  if (DEMO) return demo.demoUpdateAppointment(id, patch);
+  await updateDoc(doc(db, "appointments", id), {
+    ...patch,
+    updatedAt: serverTimestamp(),
+  } as any);
+}
+
+export async function cancelAppointment(appt: Appointment): Promise<void> {
+  if (DEMO) return demo.demoCancelAppointment(appt.id);
+  await updateDoc(doc(db, "appointments", appt.id), {
+    status: "cancelled",
+    updatedAt: serverTimestamp(),
+  });
+  await deleteDoc(
+    doc(db, "slots", slotId(appt.doctorId, appt.date, appt.slot)),
+  ).catch(() => {});
+}
+
+export async function listAppointmentsFor(
+  field: "patientId" | "doctorId",
+  id: string,
+): Promise<Appointment[]> {
+  if (DEMO) return demo.demoListAppointmentsFor(field, id);
+  const q = query(
+    collection(db, "appointments"),
+    where(field, "==", id),
+    orderBy("date", "desc"),
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Appointment);
+}
+
+export async function listAllAppointments(): Promise<Appointment[]> {
+  if (DEMO) return demo.demoListAllAppointments();
+  const q = query(collection(db, "appointments"), orderBy("date", "desc"));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Appointment);
+}
+
+// ============================================================
+// Promotions
+// ============================================================
+
+export async function listPromotions(activeOnly = false): Promise<Promotion[]> {
+  if (DEMO) return demo.demoListPromotions(activeOnly);
+  const snap = await getDocs(collection(db, "promotions"));
+  let items = snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Promotion);
+  if (activeOnly) items = items.filter((p) => p.active);
+  return items.sort((a, b) => {
+    const at = (a.createdAt as Timestamp)?.toMillis?.() ?? 0;
+    const bt = (b.createdAt as Timestamp)?.toMillis?.() ?? 0;
+    return bt - at;
+  });
+}
+
+export async function createPromotion(
+  p: Omit<Promotion, "id" | "createdAt">,
+): Promise<string> {
+  if (DEMO) return demo.demoCreatePromotion(p);
+  const ref = await addDoc(collection(db, "promotions"), {
+    ...p,
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
+}
+
+export async function updatePromotion(
+  id: string,
+  patch: Partial<Promotion>,
+): Promise<void> {
+  if (DEMO) return demo.demoUpdatePromotion(id, patch);
+  await updateDoc(doc(db, "promotions", id), patch as any);
+}
+
+export async function deletePromotion(id: string): Promise<void> {
+  if (DEMO) return demo.demoDeletePromotion(id);
+  await deleteDoc(doc(db, "promotions", id));
+}

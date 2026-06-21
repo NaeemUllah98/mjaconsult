@@ -1,5 +1,11 @@
 import { isFirebaseConfigured } from "@/lib/firebase";
-import { buildSeed, DEMO_PASSWORDS, type DemoDB } from "./seed";
+import {
+  buildSeed,
+  DEMO_PASSWORDS,
+  DEFAULT_PAYMENT_SETTINGS,
+  DEFAULT_SITE_SETTINGS,
+  type DemoDB,
+} from "./seed";
 import type {
   AppUser,
   Doctor,
@@ -9,12 +15,21 @@ import type {
   ChatMessage,
   AppNotification,
   TimeSlot,
+  PaymentSettings,
+  SiteSettings,
 } from "@/types";
+
+/** Attachment payload shared between the real and demo chat backends. */
+export interface MessageAttachment {
+  url: string;
+  name: string;
+  type: "image" | "file";
+}
 
 /** DEMO mode is active whenever Firebase keys are absent. */
 export const DEMO = !isFirebaseConfigured;
 
-const STORAGE_KEY = "mjaconsult_demo_db_v1";
+const STORAGE_KEY = "mjaconsult_demo_db_v2";
 
 // ---- persistence --------------------------------------------------------
 
@@ -23,6 +38,7 @@ function reviveDates(db: DemoDB): DemoDB {
   const fix = (o: any) => {
     if (o && typeof o.createdAt === "string") o.createdAt = new Date(o.createdAt);
     if (o && typeof o.updatedAt === "string") o.updatedAt = new Date(o.updatedAt);
+    if (o && typeof o.lastSeenAt === "string") o.lastSeenAt = new Date(o.lastSeenAt);
     return o;
   };
   db.users.forEach(fix);
@@ -102,11 +118,22 @@ export function demoLogin(email: string, password: string): AppUser {
     (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
   );
   if (!user) throw { code: "auth/user-not-found" };
-  const expected = DEMO_PASSWORDS[user.uid] ?? "patient123";
+  const expected =
+    db.passwordOverrides?.[user.uid] ?? DEMO_PASSWORDS[user.uid] ?? "patient123";
   if (password !== expected) throw { code: "auth/wrong-password" };
   db.currentUid = user.uid;
   save();
   return clone(user);
+}
+
+/** Admin sets a new password for a user (demo only — in-memory override). */
+export function demoSetPassword(email: string, password: string) {
+  const user = db.users.find(
+    (u) => u.email.toLowerCase() === email.trim().toLowerCase(),
+  );
+  if (!user) throw { code: "auth/user-not-found" };
+  (db.passwordOverrides ??= {})[user.uid] = password;
+  save();
 }
 
 export function demoLoginAs(uid: string): AppUser {
@@ -210,6 +237,30 @@ export function demoSetDoctorActive(uid: string, active: boolean) {
   save();
 }
 
+export function demoSubscribeDoctors(
+  cb: (docs: Doctor[]) => void,
+): () => void {
+  const run = () => cb(clone(db.doctors));
+  run();
+  return on("any", run);
+}
+
+/** Presence heartbeat (demo) — mirror onto both the doctor & user records. */
+export function demoSetPresence(uid: string, online: boolean) {
+  const now = new Date();
+  const d = db.doctors.find((x) => x.uid === uid);
+  if (d) {
+    d.online = online;
+    d.lastSeenAt = now;
+  }
+  const u = db.users.find((x) => x.uid === uid);
+  if (u) {
+    u.online = online;
+    u.lastSeenAt = now;
+  }
+  save();
+}
+
 export function demoDeleteDoctor(uid: string) {
   db.doctors = db.doctors.filter((d) => d.uid !== uid);
   db.users = db.users.filter((u) => u.uid !== uid);
@@ -219,7 +270,9 @@ export function demoDeleteDoctor(uid: string) {
 // ---- appointments -------------------------------------------------------
 
 export function demoBookAppointment(
-  input: Omit<Appointment, "id" | "createdAt" | "updatedAt" | "status">,
+  input: Omit<Appointment, "id" | "createdAt" | "updatedAt" | "status"> & {
+    status?: Appointment["status"];
+  },
 ): string {
   const taken = db.appointments.some(
     (a) =>
@@ -233,7 +286,7 @@ export function demoBookAppointment(
   db.appointments.push({
     ...input,
     id,
-    status: "confirmed",
+    status: input.status ?? "confirmed",
     createdAt: new Date(),
     updatedAt: new Date(),
   });
@@ -345,18 +398,23 @@ export function demoSendMessage(
   senderId: string,
   recipientId: string,
   text: string,
+  attachment?: MessageAttachment,
 ) {
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed && !attachment) return;
   (db.messages[id] ??= []).push({
     id: `m-${Date.now()}`,
     senderId,
     text: trimmed,
+    attachmentUrl: attachment?.url,
+    attachmentName: attachment?.name,
+    attachmentType: attachment?.type,
     createdAt: new Date(),
   });
+  const preview = trimmed || (attachment ? `📎 ${attachment.name}` : "");
   const t = db.chats.find((c) => c.id === id);
   if (t) {
-    t.lastMessage = trimmed;
+    t.lastMessage = preview;
     t.lastSenderId = senderId;
     t.updatedAt = new Date();
     t.unread = { ...(t.unread ?? {}), [recipientId]: (t.unread?.[recipientId] ?? 0) + 1 };
@@ -456,4 +514,24 @@ export function demoMarkNotificationRead(id: string) {
   if (n) n.read = true;
   save();
   emit("notifications");
+}
+
+// ---- settings -----------------------------------------------------------
+
+export function demoGetPaymentSettings(): PaymentSettings {
+  return clone(db.paymentSettings ?? DEFAULT_PAYMENT_SETTINGS);
+}
+
+export function demoSavePaymentSettings(settings: PaymentSettings) {
+  db.paymentSettings = settings;
+  save();
+}
+
+export function demoGetSiteSettings(): SiteSettings {
+  return clone(db.siteSettings ?? DEFAULT_SITE_SETTINGS);
+}
+
+export function demoSaveSiteSettings(settings: SiteSettings) {
+  db.siteSettings = settings;
+  save();
 }

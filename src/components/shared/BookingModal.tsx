@@ -7,33 +7,48 @@ import {
   CheckCircle2,
   Loader2,
   Info,
+  Wallet,
+  Upload,
+  Ticket,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Input";
+import { ImageUploader } from "@/components/ui/ImageUploader";
+import { PaymentInfo } from "@/components/shared/PaymentInfo";
 import { useAuth } from "@/context/AuthContext";
-import { bookAppointment, getTakenSlots } from "@/lib/api";
+import {
+  bookAppointment,
+  getTakenSlots,
+  updateAppointment,
+  listAdmins,
+  getPaymentSettings,
+} from "@/lib/api";
+import { DEFAULT_PAYMENT_SETTINGS } from "@/lib/demo/seed";
 import { notify } from "@/lib/notifications";
+import { computePromoFee, discountLabel } from "@/utils/appointment";
 import {
   formatCurrency,
   formatTime,
   weekdayFromISO,
   WEEKDAY_LABELS,
 } from "@/utils/format";
-import type { Doctor, TimeSlot } from "@/types";
+import type { Doctor, Promotion, PaymentSettings, TimeSlot } from "@/types";
+
+type View = "select" | "pay-accounts" | "pay-upload" | "submitted" | "done";
 
 export function BookingModal({
   doctor,
   open,
   onClose,
-  freeCampaign,
+  promo,
   onBooked,
 }: {
   doctor: Doctor;
   open: boolean;
   onClose: () => void;
-  freeCampaign?: boolean;
+  promo?: Promotion;
   onBooked?: () => void;
 }) {
   const { user } = useAuth();
@@ -43,7 +58,15 @@ export function BookingModal({
   const [reason, setReason] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [booking, setBooking] = useState(false);
-  const [done, setDone] = useState(false);
+  const [view, setView] = useState<View>("select");
+  const [apptId, setApptId] = useState<string | null>(null);
+  const [proofUrl, setProofUrl] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [paySettings, setPaySettings] = useState<PaymentSettings | null>(null);
+
+  const currency = doctor.currency ?? "USD";
+  const fee = useMemo(() => computePromoFee(doctor.fees, promo), [doctor.fees, promo]);
+  const isFree = fee === 0;
 
   // Next 14 days as quick-pick chips.
   const days = useMemo(
@@ -77,16 +100,27 @@ export function BookingModal({
     setDateISO("");
     setSlot(null);
     setReason("");
-    setDone(false);
+    setView("select");
+    setApptId(null);
+    setProofUrl("");
+  }
+
+  function closeAll() {
+    onClose();
+    setTimeout(reset, 200);
   }
 
   async function confirm() {
     if (!user || !slot || !dateISO) return;
     setBooking(true);
+
+    // --- Step 1: create the booking (this is the only step that may fail
+    //     in a way that should abort the flow). ---
+    let id: string;
     try {
-      // Atomic booking (locks the slot). The Google Meet link is created later
-      // by the admin on request — see lib/meet.ts.
-      await bookAppointment({
+      // Paid bookings start as "pending" and only become "confirmed" once an
+      // admin verifies the payment proof. Free offers are confirmed instantly.
+      id = await bookAppointment({
         patientId: user.uid,
         patientName: user.name,
         patientPhone: user.phone,
@@ -98,65 +132,118 @@ export function BookingModal({
         date: dateISO,
         slot,
         reason,
-        fee: freeCampaign ? 0 : doctor.fees,
-        isFree: !!freeCampaign,
-        paymentStatus: freeCampaign ? "free" : "unpaid",
+        fee,
+        isFree,
+        promoId: promo?.id,
+        promoTitle: promo?.title,
+        originalFee: doctor.fees,
+        status: isFree ? "confirmed" : "pending",
+        paymentStatus: isFree ? "free" : "unpaid",
       });
-
-      // Notify the doctor.
-      await notify({
-        userId: doctor.uid,
-        email: doctor.email,
-        name: doctor.name,
-        title: "New appointment booked",
-        body: `${user.name} booked ${format(new Date(dateISO), "MMM d")} at ${formatTime(slot.start)}.`,
-        type: "appointment",
-        sendEmailToo: true,
-      });
-
-      setDone(true);
-      onBooked?.();
     } catch (err: any) {
       if (err?.message === "SLOT_TAKEN") {
         toast.error("Sorry, that slot was just taken. Please pick another.");
-        // refresh taken slots
         getTakenSlots(doctor.uid, dateISO).then(setTaken);
         setSlot(null);
       } else {
-        toast.error("Booking failed. Please try again.");
+        console.error("booking failed", err);
+        toast.error(err?.message ? `Booking failed: ${err.message}` : "Booking failed. Please try again.");
       }
-    } finally {
       setBooking(false);
+      return;
+    }
+
+    // --- Step 2: post-booking steps are best-effort and must NOT block the
+    //     payment popup from opening (notifications/settings reads can fail
+    //     e.g. if email or security rules aren't fully configured). ---
+    setApptId(id);
+    onBooked?.();
+
+    notify({
+      userId: doctor.uid,
+      email: doctor.email,
+      name: doctor.name,
+      title: "New appointment booked",
+      body: `${user.name} booked ${format(new Date(dateISO), "MMM d")} at ${formatTime(slot.start)}.`,
+      type: "appointment",
+      sendEmailToo: true,
+    }).catch(() => {});
+
+    if (isFree) {
+      setView("done");
+    } else {
+      const settings = await getPaymentSettings(); // never throws (falls back)
+      setPaySettings(settings);
+      setView("pay-accounts");
+    }
+    setBooking(false);
+  }
+
+  async function submitProof() {
+    if (!apptId || !proofUrl) return;
+    setSubmitting(true);
+    try {
+      await updateAppointment(apptId, {
+        paymentProofUrl: proofUrl,
+        paymentStatus: "proof_submitted",
+      });
+      const admins = await listAdmins();
+      await Promise.all(
+        admins.map((a) =>
+          notify({
+            userId: a.uid,
+            email: a.email,
+            name: a.name,
+            title: "Payment proof submitted",
+            body: `${user?.name} uploaded payment proof for ${dateISO} — review needed.`,
+            type: "payment",
+            link: "/admin/appointments",
+            sendEmailToo: true,
+          }),
+        ),
+      );
+      setView("submitted");
+    } catch {
+      toast.error("Could not submit proof. Please try again.");
+    } finally {
+      setSubmitting(false);
     }
   }
+
+  const titles: Record<View, string> = {
+    select: `Book with ${doctor.name}`,
+    "pay-accounts": "Complete your payment",
+    "pay-upload": "Upload payment proof",
+    submitted: "Booking received 🎉",
+    done: "Appointment confirmed 🎉",
+  };
 
   return (
     <Modal
       open={open}
-      onClose={() => {
-        onClose();
-        setTimeout(reset, 200);
-      }}
-      title={done ? "Appointment confirmed 🎉" : `Book with ${doctor.name}`}
+      onClose={closeAll}
+      title={titles[view]}
       description={
-        done
-          ? undefined
-          : `${doctor.specialization} • ${freeCampaign ? "Free campaign" : formatCurrency(doctor.fees, doctor.currency ?? "USD")}`
+        view === "select"
+          ? `${doctor.specialization} • ${
+              isFree ? "Free offer" : formatCurrency(fee, currency)
+            }`
+          : undefined
       }
       size="lg"
     >
-      {done ? (
-        <ConfirmedView
-          doctorName={doctor.name}
-          dateISO={dateISO}
-          slot={slot!}
-          onClose={() => {
-            onClose();
-            setTimeout(reset, 200);
-          }}
-        />
-      ) : (
+      {view === "select" && (
         <div className="space-y-6">
+          {promo && (
+            <div className="flex items-center gap-2 rounded-xl bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">
+              <Ticket className="h-4 w-4" />
+              <span>
+                <strong>{promo.title}</strong>
+                {discountLabel(promo) ? ` — ${discountLabel(promo)}` : ""}
+              </span>
+            </div>
+          )}
+
           {/* Step 1: date */}
           <div>
             <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink-soft">
@@ -241,37 +328,109 @@ export function BookingModal({
             />
           )}
 
-          {/* Payment + Meet note */}
           {slot && (
             <div className="space-y-3 rounded-xl bg-surface-subtle p-4 text-sm">
               <div className="flex items-center gap-2 text-ink-soft">
                 <Video className="h-4 w-4 text-brand-500" />
-                Once your payment is verified, request a Google Meet link from{" "}
-                <strong>My Appointments</strong> — the admin shares it with you
-                and the doctor.
+                You can message the doctor and request a Google Meet link during
+                your booked slot, once payment is verified.
               </div>
-              {!freeCampaign && (
+              {!isFree && (
                 <div className="flex items-start gap-2 text-ink-muted">
                   <Info className="mt-0.5 h-4 w-4 text-amber-500" />
-                  After booking, upload your payment proof from{" "}
-                  <strong>My Appointments</strong> for verification.
+                  Next you'll see our bank accounts and upload your payment
+                  proof for verification.
                 </div>
               )}
             </div>
           )}
 
-          <Button
-            fullWidth
-            size="lg"
-            disabled={!slot}
-            loading={booking}
-            onClick={confirm}
-          >
-            {freeCampaign
+          <Button fullWidth size="lg" disabled={!slot} loading={booking} onClick={confirm}>
+            {isFree
               ? "Book free consultation"
-              : `Confirm booking • ${formatCurrency(doctor.fees, doctor.currency ?? "USD")}`}
+              : `Confirm & pay • ${formatCurrency(fee, currency)}`}
           </Button>
         </div>
+      )}
+
+      {view === "pay-accounts" && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between rounded-xl bg-brand-gradient-soft p-4">
+            <span className="flex items-center gap-2 font-semibold text-brand-900">
+              <Wallet className="h-5 w-5" /> Amount due
+            </span>
+            <span className="font-display text-2xl font-extrabold text-brand-900">
+              {formatCurrency(fee, currency)}
+            </span>
+          </div>
+
+          <PaymentInfo settings={paySettings ?? DEFAULT_PAYMENT_SETTINGS} />
+
+          <Button fullWidth size="lg" onClick={() => setView("pay-upload")}>
+            OK — upload payment proof <Upload className="h-4 w-4" />
+          </Button>
+          <p className="text-center text-xs text-ink-muted">
+            Your slot is held. You can also upload the proof later from{" "}
+            <strong>My Appointments</strong>.
+          </p>
+        </div>
+      )}
+
+      {view === "pay-upload" && (
+        <div className="space-y-4">
+          <ImageUploader
+            value={proofUrl}
+            onUploaded={setProofUrl}
+            folder="payment-proofs"
+            hint="Screenshot of your bank transfer / payment receipt"
+          />
+          <div className="flex gap-3">
+            <Button variant="outline" fullWidth onClick={() => setView("pay-accounts")}>
+              Back
+            </Button>
+            <Button
+              fullWidth
+              onClick={submitProof}
+              disabled={!proofUrl}
+              loading={submitting}
+            >
+              Submit for verification
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {view === "submitted" && (
+        <div className="py-4 text-center">
+          <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-amber-50 text-amber-500">
+            <Wallet className="h-9 w-9" />
+          </div>
+          <h3 className="mt-4 font-display text-xl font-bold text-ink">
+            Payment proof submitted
+          </h3>
+          <p className="mt-2 text-ink-muted">
+            Once our team verifies your payment, your slot with{" "}
+            <strong>{doctor.name}</strong> will be confirmed and you'll be
+            notified.
+          </p>
+          <div className="mt-6 flex gap-3">
+            <Button variant="outline" fullWidth onClick={closeAll}>
+              Close
+            </Button>
+            <a href="/patient/appointments" className="w-full">
+              <Button fullWidth>View appointments</Button>
+            </a>
+          </div>
+        </div>
+      )}
+
+      {view === "done" && (
+        <ConfirmedView
+          doctorName={doctor.name}
+          dateISO={dateISO}
+          slot={slot!}
+          onClose={closeAll}
+        />
       )}
     </Modal>
   );

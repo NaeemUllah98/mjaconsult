@@ -27,6 +27,9 @@ export interface AppUser {
   photoURL?: string;
   active: boolean;
   createdAt?: FireDate;
+  /** Live presence — refreshed by a heartbeat while the app is open. */
+  online?: boolean;
+  lastSeenAt?: FireDate;
 }
 
 /** Weekday key used for availability maps. */
@@ -90,6 +93,11 @@ export interface Appointment {
   reason?: string;
   fee: number;
   isFree: boolean;
+  /** Set when the appointment was booked through a promotion/offer. */
+  promoId?: string;
+  promoTitle?: string;
+  /** The doctor's list fee before any promotion discount was applied. */
+  originalFee?: number;
   paymentStatus: PaymentStatus;
   paymentProofUrl?: string;
   meetLink?: string;
@@ -119,10 +127,17 @@ export interface ChatMessage {
   id: string;
   senderId: string;
   text: string;
+  /** Optional shared report/attachment (image preview or downloadable file). */
+  attachmentUrl?: string;
+  attachmentName?: string;
+  attachmentType?: "image" | "file";
   createdAt?: FireDate;
 }
 
 export type PromotionType = "promo" | "free_campaign";
+
+/** How a promotion adjusts the consultation fee for patients who claim it. */
+export type DiscountType = "percent" | "flat" | "free" | "none";
 
 /** Promotional offer / free-consultation campaign in `promotions/{id}`. */
 export interface Promotion {
@@ -131,11 +146,35 @@ export interface Promotion {
   title: string;
   description: string;
   imageUrl?: string;
-  /** For free campaigns: which doctor(s) it applies to (empty = all). */
+  /** For free campaigns / targeted offers: which doctor(s) it applies to (empty = all). */
   doctorIds?: string[];
+  /** Fee criteria applied when a patient books through this offer. */
+  discountType?: DiscountType;
+  /** Percent (0–100) when discountType==='percent', else a flat amount off. */
+  discountValue?: number;
   active: boolean;
   expiresAt?: string; // ISO date
   createdAt?: FireDate;
+}
+
+/** One bank account shown to patients on the payment popup. */
+export interface BankAccount {
+  bank: string;
+  title: string; // account title / holder name
+  number: string; // account number or IBAN
+}
+
+/** Admin-editable payment settings in `settings/payment`. */
+export interface PaymentSettings {
+  pkAccount: BankAccount;
+  uaeAccount: BankAccount;
+  instructions?: string;
+}
+
+/** Public site settings in `settings/site` (e.g. the homepage hero doctor). */
+export interface SiteSettings {
+  /** Which doctor is promoted on the public landing page (empty = auto). */
+  featuredDoctorId?: string;
 }
 
 export interface AppNotification {

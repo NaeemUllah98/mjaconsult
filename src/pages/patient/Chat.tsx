@@ -10,7 +10,7 @@ export default function PatientChat() {
         title="Messages"
         subtitle="Chat securely with your doctors — no phone numbers shared."
       />
-      <ChatPanel userId={user!.uid} field="patientId" />
+      <ChatPanel userId={user!.uid} field="patientId" enforceWindow />
     </div>
   );
 }

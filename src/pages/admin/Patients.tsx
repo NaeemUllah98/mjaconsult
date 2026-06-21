@@ -1,14 +1,16 @@
 import { useMemo, useState } from "react";
-import { Search, Users, Trash2, Mail, Phone } from "lucide-react";
+import { Search, Users, Trash2, Mail, Phone, KeyRound } from "lucide-react";
 import toast from "react-hot-toast";
+import { DEMO } from "@/lib/demo/backend";
 import { useAsync } from "@/hooks/useAsync";
-import { listPatients, deleteUserRecord } from "@/lib/api";
+import { listPatients, deleteUserRecord, resetPatientPassword } from "@/lib/api";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
 import { formatDate } from "@/utils/format";
@@ -18,7 +20,36 @@ export default function AdminPatients() {
   const { data, loading, reload } = useAsync(() => listPatients(), []);
   const [q, setQ] = useState("");
   const [removeTarget, setRemoveTarget] = useState<AppUser | null>(null);
+  const [pwTarget, setPwTarget] = useState<AppUser | null>(null);
+  const [newPw, setNewPw] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  async function submitPasswordReset() {
+    if (!pwTarget) return;
+    if (DEMO && newPw.length < 6) {
+      toast.error("Password must be at least 6 characters.");
+      return;
+    }
+    setPwBusy(true);
+    try {
+      const channel = await resetPatientPassword(
+        pwTarget.email,
+        DEMO ? newPw : undefined,
+      );
+      toast.success(
+        channel === "set"
+          ? `Password updated for ${pwTarget.name}`
+          : `Reset link emailed to ${pwTarget.email}`,
+      );
+      setPwTarget(null);
+      setNewPw("");
+    } catch {
+      toast.error("Could not reset the password. Please try again.");
+    } finally {
+      setPwBusy(false);
+    }
+  }
 
   const filtered = useMemo(
     () =>
@@ -115,6 +146,17 @@ export default function AdminPatients() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        className="text-brand-600 hover:bg-brand-50"
+                        onClick={() => {
+                          setPwTarget(p);
+                          setNewPw("");
+                        }}
+                      >
+                        <KeyRound className="h-4 w-4" /> Reset password
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         className="text-rose-500 hover:bg-rose-50"
                         onClick={() => setRemoveTarget(p)}
                       >
@@ -130,12 +172,23 @@ export default function AdminPatients() {
           {/* Mobile cards */}
           <div className="divide-y divide-surface-muted md:hidden">
             {filtered.map((p) => (
-              <div key={p.uid} className="flex items-center gap-3 p-4">
+              <div key={p.uid} className="flex items-center gap-2 p-4">
                 <Avatar name={p.name} src={p.photoURL} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-semibold text-ink">{p.name}</p>
                   <p className="truncate text-xs text-ink-muted">{p.email}</p>
                 </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-brand-600"
+                  onClick={() => {
+                    setPwTarget(p);
+                    setNewPw("");
+                  }}
+                >
+                  <KeyRound className="h-4 w-4" />
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -149,6 +202,53 @@ export default function AdminPatients() {
           </div>
         </Card>
       )}
+
+      <Modal
+        open={!!pwTarget}
+        onClose={() => setPwTarget(null)}
+        title="Reset patient password"
+        description={
+          pwTarget
+            ? `For ${pwTarget.name} (${pwTarget.email}).`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setPwTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={submitPasswordReset}
+              loading={pwBusy}
+              disabled={DEMO && newPw.length < 6}
+            >
+              {DEMO ? "Set new password" : "Send reset link"}
+            </Button>
+          </>
+        }
+      >
+        {DEMO ? (
+          <div className="space-y-3">
+            <Input
+              label="New password"
+              type="text"
+              placeholder="At least 6 characters"
+              value={newPw}
+              onChange={(e) => setNewPw(e.target.value)}
+            />
+            <p className="text-xs text-ink-muted">
+              The patient can sign in with this new password immediately.
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-surface-subtle p-4 text-sm text-ink-soft">
+            We'll email <strong>{pwTarget?.email}</strong> a secure link to
+            choose a new password. On the free Firebase plan, passwords are
+            changed by the account owner via this reset link rather than set
+            directly — this keeps the account secure at zero cost.
+          </div>
+        )}
+      </Modal>
 
       <ConfirmDialog
         open={!!removeTarget}

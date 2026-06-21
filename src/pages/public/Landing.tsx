@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
@@ -17,6 +18,21 @@ import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 import { homeForRole } from "@/routes/guards";
+import { getSiteSettings, getDoctor, listDoctors } from "@/lib/api";
+import { WEEKDAYS } from "@/utils/format";
+import type { Doctor } from "@/types";
+
+/** Up to 6 upcoming slot times from a doctor's weekly availability. */
+function previewSlots(doctor: Doctor | null): string[] {
+  if (doctor) {
+    const order = [...WEEKDAYS.slice(new Date().getDay()), ...WEEKDAYS];
+    for (const wd of order) {
+      const slots = doctor.availability?.[wd] ?? [];
+      if (slots.length) return slots.slice(0, 6).map((s) => s.start);
+    }
+  }
+  return ["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"];
+}
 
 const features = [
   {
@@ -70,6 +86,35 @@ const fade = {
 export default function Landing() {
   const { user } = useAuth();
   const dashHref = user ? homeForRole[user.role] : "/register";
+
+  // The doctor promoted on the homepage (admin-chosen, else first active).
+  const [featured, setFeatured] = useState<Doctor | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const site = await getSiteSettings();
+        let doc: Doctor | null = site.featuredDoctorId
+          ? await getDoctor(site.featuredDoctorId)
+          : null;
+        if (!doc) {
+          const docs = await listDoctors(true);
+          doc = docs[0] ?? null;
+        }
+        if (alive) setFeatured(doc);
+      } catch {
+        /* keep the static fallback card */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const heroName = featured?.name ?? "Dr. Sarah Khan";
+  const heroSpec = featured?.specialization ?? "Cardiologist";
+  const heroRating = (featured?.rating ?? 4.9).toFixed(1);
+  const heroSlots = previewSlots(featured);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-surface">
@@ -148,40 +193,52 @@ export default function Landing() {
               <div className="absolute -inset-4 rounded-[2rem] bg-brand-gradient opacity-10 blur-2xl" />
               <div className="relative overflow-hidden rounded-[2rem] border border-surface-muted bg-surface p-6 shadow-card">
                 <div className="flex items-center gap-3 border-b border-surface-muted pb-4">
-                  <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-gradient text-white">
-                    <Stethoscope className="h-6 w-6" />
+                  {featured?.photoURL ? (
+                    <img
+                      src={featured.photoURL}
+                      alt={heroName}
+                      className="h-12 w-12 rounded-2xl object-cover"
+                    />
+                  ) : (
+                    <div className="grid h-12 w-12 place-items-center rounded-2xl bg-brand-gradient text-white">
+                      <Stethoscope className="h-6 w-6" />
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-display font-bold text-ink">
+                      {heroName}
+                    </p>
+                    <p className="truncate text-sm text-ink-muted">
+                      {heroSpec} • ⭐ {heroRating}
+                    </p>
                   </div>
-                  <div>
-                    <p className="font-display font-bold text-ink">Dr. Sarah Khan</p>
-                    <p className="text-sm text-ink-muted">Cardiologist • ⭐ 4.9</p>
-                  </div>
-                  <span className="ml-auto inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                  <span className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
                     <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                     Available
                   </span>
                 </div>
                 <div className="mt-4 grid grid-cols-3 gap-2">
-                  {["09:00", "09:30", "10:00", "10:30", "11:00", "11:30"].map(
-                    (t, i) => (
-                      <div
-                        key={t}
-                        className={`rounded-xl border px-2 py-2.5 text-center text-sm font-medium ${
-                          i === 2
-                            ? "border-brand-400 bg-brand-gradient text-white shadow-glow"
-                            : "border-surface-muted text-ink-soft"
-                        }`}
-                      >
-                        {t}
-                      </div>
-                    ),
-                  )}
+                  {heroSlots.map((t, i) => (
+                    <div
+                      key={`${t}-${i}`}
+                      className={`rounded-xl border px-2 py-2.5 text-center text-sm font-medium ${
+                        i === 2
+                          ? "border-brand-400 bg-brand-gradient text-white shadow-glow"
+                          : "border-surface-muted text-ink-soft"
+                      }`}
+                    >
+                      {t}
+                    </div>
+                  ))}
                 </div>
                 <div className="mt-4 flex items-center justify-between rounded-2xl bg-brand-50 px-4 py-3">
                   <div className="flex items-center gap-2 text-brand-700">
                     <Video className="h-5 w-5" />
                     <span className="text-sm font-semibold">Google Meet ready</span>
                   </div>
-                  <Button size="sm">Confirm</Button>
+                  <Link to={dashHref}>
+                    <Button size="sm">Confirm</Button>
+                  </Link>
                 </div>
               </div>
 
@@ -196,7 +253,7 @@ export default function Landing() {
                     <Star className="h-4 w-4 fill-white" />
                   </div>
                   <div>
-                    <p className="text-sm font-bold text-ink">4.9 / 5</p>
+                    <p className="text-sm font-bold text-ink">{heroRating} / 5</p>
                     <p className="text-xs text-ink-muted">Patient rating</p>
                   </div>
                 </div>

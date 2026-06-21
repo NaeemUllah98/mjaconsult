@@ -101,6 +101,14 @@ service cloud.firestore {
       allow write: if isAdmin();      // only admins broadcast
     }
 
+    // ---- settings ----------------------------------------------
+    // Payment accounts shown to patients on the booking popup; the public
+    // `site` doc (promoted homepage doctor) is readable by anyone.
+    match /settings/{docId} {
+      allow read: if isSignedIn() || docId == "site";
+      allow write: if isAdmin();      // only admins edit
+    }
+
     // ---- notifications -----------------------------------------
     match /notifications/{notifId} {
       allow read: if isSignedIn() && resource.data.userId == request.auth.uid;

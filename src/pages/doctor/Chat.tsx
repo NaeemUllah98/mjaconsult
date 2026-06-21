@@ -10,7 +10,7 @@ export default function DoctorChat() {
         title="Messages"
         subtitle="Communicate securely with your patients inside the platform."
       />
-      <ChatPanel userId={user!.uid} field="doctorId" />
+      <ChatPanel userId={user!.uid} field="doctorId" enforceWindow />
     </div>
   );
 }

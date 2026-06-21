@@ -6,6 +6,8 @@ import {
   CalendarCheck,
   MessageSquare,
   Megaphone,
+  FileSpreadsheet,
+  Settings,
 } from "lucide-react";
 import { DashboardLayout, type NavItem } from "@/components/layout/DashboardLayout";
 
@@ -16,6 +18,8 @@ const nav: NavItem[] = [
   { to: "/admin/appointments", label: "Appointments", icon: <CalendarCheck className="h-5 w-5" /> },
   { to: "/admin/messages", label: "Conversations", icon: <MessageSquare className="h-5 w-5" /> },
   { to: "/admin/promotions", label: "Promotions", icon: <Megaphone className="h-5 w-5" /> },
+  { to: "/admin/export", label: "Data export", icon: <FileSpreadsheet className="h-5 w-5" /> },
+  { to: "/admin/settings", label: "Settings", icon: <Settings className="h-5 w-5" /> },
 ];
 
 export function AdminLayout() {

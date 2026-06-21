@@ -65,14 +65,16 @@ export default function AdminAppointments() {
     try {
       await updateAppointment(a.id, {
         paymentStatus: approve ? "verified" : "rejected",
+        // Verifying payment confirms the slot for the patient.
+        ...(approve ? { status: "confirmed" as const } : {}),
       });
       await notify({
         userId: a.patientId,
         email: a.patientEmail,
         name: a.patientName,
-        title: approve ? "Payment approved ✅" : "Payment rejected",
+        title: approve ? "Slot confirmed ✅" : "Payment rejected",
         body: approve
-          ? `Your payment for the ${a.date} appointment was approved. You can now message your doctor and request a Meet link.`
+          ? `Your payment for the ${a.date} appointment was approved and your slot is now confirmed. You can message your doctor and request a Meet link during the appointment.`
           : `Your payment proof for ${a.date} was rejected. Please re-upload a valid proof.`,
         type: "payment",
         sendEmailToo: true,

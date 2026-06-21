@@ -148,10 +148,16 @@ export default function DoctorAppointments() {
                       <Video className="h-4 w-4" /> Request Meet link
                     </Button>
                   )}
-                  {a.status === "confirmed" && !isPaid(a) && (
+                  {a.paymentStatus === "proof_submitted" && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600">
+                      <MessageSquare className="h-3.5 w-3.5" /> Awaiting payment
+                      verification by admin
+                    </span>
+                  )}
+                  {isPaid(a) && a.status !== "cancelled" && (
                     <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
                       <MessageSquare className="h-3.5 w-3.5" /> Messaging &amp;
-                      Meet unlock once payment is verified
+                      Meet open during the appointment slot
                     </span>
                   )}
                   {a.status === "confirmed" &&

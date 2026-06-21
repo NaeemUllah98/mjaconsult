@@ -13,7 +13,10 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import * as demo from "./demo/backend";
+import type { MessageAttachment } from "./demo/backend";
 import type { ChatMessage, ChatThread } from "@/types";
+
+export type { MessageAttachment };
 
 const DEMO = demo.DEMO;
 
@@ -54,17 +57,23 @@ export async function sendMessage(
   senderId: string,
   recipientId: string,
   text: string,
+  attachment?: MessageAttachment,
 ): Promise<void> {
-  if (DEMO) return demo.demoSendMessage(id, senderId, recipientId, text);
+  if (DEMO)
+    return demo.demoSendMessage(id, senderId, recipientId, text, attachment);
   const trimmed = text.trim();
-  if (!trimmed) return;
+  if (!trimmed && !attachment) return;
   await addDoc(collection(db, "chats", id, "messages"), {
     senderId,
     text: trimmed,
+    attachmentUrl: attachment?.url,
+    attachmentName: attachment?.name,
+    attachmentType: attachment?.type,
     createdAt: serverTimestamp(),
   });
+  const preview = trimmed || (attachment ? `📎 ${attachment.name}` : "");
   await updateDoc(doc(db, "chats", id), {
-    lastMessage: trimmed,
+    lastMessage: preview,
     lastSenderId: senderId,
     updatedAt: serverTimestamp(),
     [`unread.${recipientId}`]: increment(1),

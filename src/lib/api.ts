@@ -10,18 +10,23 @@ import {
   query,
   where,
   orderBy,
+  onSnapshot,
   runTransaction,
   serverTimestamp,
   Timestamp,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { auth, db } from "./firebase";
 import * as demo from "./demo/backend";
+import { DEFAULT_PAYMENT_SETTINGS, DEFAULT_SITE_SETTINGS } from "./demo/seed";
 import type {
   AppUser,
   Doctor,
   Appointment,
   Promotion,
   TimeSlot,
+  PaymentSettings,
+  SiteSettings,
 } from "@/types";
 
 const DEMO = demo.DEMO;
@@ -66,6 +71,27 @@ export async function deleteUserRecord(uid: string): Promise<void> {
   await deleteDoc(doc(db, "users", uid));
 }
 
+/**
+ * Admin-initiated password reset.
+ *  - DEMO: directly set a new password (in-memory).
+ *  - Firebase (free Spark): send the patient a secure reset email. The client
+ *    SDK can't set another user's password without the Admin SDK (Blaze), so
+ *    the email flow is the correct zero-cost approach.
+ *
+ * Returns the channel used so the UI can show the right confirmation.
+ */
+export async function resetPatientPassword(
+  email: string,
+  newPassword?: string,
+): Promise<"set" | "email"> {
+  if (DEMO) {
+    demo.demoSetPassword(email, newPassword ?? "patient123");
+    return "set";
+  }
+  await sendPasswordResetEmail(auth, email);
+  return "email";
+}
+
 /** All admin accounts (used to notify admins, e.g. on Meet-link requests). */
 export async function listAdmins(): Promise<AppUser[]> {
   if (DEMO) return demo.demoListAdmins();
@@ -90,6 +116,16 @@ export async function listDoctors(activeOnly = false): Promise<Doctor[]> {
   let docs = snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as Doctor);
   if (activeOnly) docs = docs.filter((d) => d.active);
   return docs;
+}
+
+/** Live subscription to all doctors (used by the admin to see presence). */
+export function subscribeDoctors(cb: (docs: Doctor[]) => void): () => void {
+  if (DEMO) return demo.demoSubscribeDoctors(cb);
+  return onSnapshot(
+    collection(db, "doctors"),
+    (snap) => cb(snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as Doctor)),
+    () => cb([]),
+  );
 }
 
 export async function upsertDoctor(d: Doctor): Promise<void> {
@@ -133,7 +169,9 @@ const slotId = (doctorId: string, date: string, slot: TimeSlot) =>
   `${doctorId}_${date}_${slot.start.replace(":", "")}`;
 
 export async function bookAppointment(
-  input: Omit<Appointment, "id" | "createdAt" | "updatedAt" | "status">,
+  input: Omit<Appointment, "id" | "createdAt" | "updatedAt" | "status"> & {
+    status?: Appointment["status"];
+  },
 ): Promise<string> {
   if (DEMO) return demo.demoBookAppointment(input);
   const lockRef = doc(db, "slots", slotId(input.doctorId, input.date, input.slot));
@@ -155,7 +193,7 @@ export async function bookAppointment(
     });
     tx.set(apptRef, {
       ...input,
-      status: "confirmed",
+      status: input.status ?? "confirmed",
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     });
@@ -262,4 +300,47 @@ export async function updatePromotion(
 export async function deletePromotion(id: string): Promise<void> {
   if (DEMO) return demo.demoDeletePromotion(id);
   await deleteDoc(doc(db, "promotions", id));
+}
+
+// ============================================================
+// Settings (payment accounts shown on the booking popup)
+// ============================================================
+
+export async function getPaymentSettings(): Promise<PaymentSettings> {
+  if (DEMO) return demo.demoGetPaymentSettings();
+  try {
+    const snap = await getDoc(doc(db, "settings", "payment"));
+    return snap.exists()
+      ? (snap.data() as PaymentSettings)
+      : DEFAULT_PAYMENT_SETTINGS;
+  } catch (err) {
+    // e.g. the `settings` security rule hasn't been deployed yet — fall back
+    // to the placeholder accounts so the booking/payment flow still works.
+    console.warn("getPaymentSettings failed; using defaults", err);
+    return DEFAULT_PAYMENT_SETTINGS;
+  }
+}
+
+export async function savePaymentSettings(
+  settings: PaymentSettings,
+): Promise<void> {
+  if (DEMO) return demo.demoSavePaymentSettings(settings);
+  await setDoc(doc(db, "settings", "payment"), settings, { merge: true });
+}
+
+export async function getSiteSettings(): Promise<SiteSettings> {
+  if (DEMO) return demo.demoGetSiteSettings();
+  try {
+    const snap = await getDoc(doc(db, "settings", "site"));
+    return snap.exists() ? (snap.data() as SiteSettings) : DEFAULT_SITE_SETTINGS;
+  } catch (err) {
+    // Public landing-page read; fall back gracefully if rules/network fail.
+    console.warn("getSiteSettings failed; using defaults", err);
+    return DEFAULT_SITE_SETTINGS;
+  }
+}
+
+export async function saveSiteSettings(settings: SiteSettings): Promise<void> {
+  if (DEMO) return demo.demoSaveSiteSettings(settings);
+  await setDoc(doc(db, "settings", "site"), settings, { merge: true });
 }

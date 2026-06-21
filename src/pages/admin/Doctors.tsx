@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Search,
@@ -8,15 +8,17 @@ import {
   Power,
   Star,
   Mail,
+  AlertTriangle,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { useAsync } from "@/hooks/useAsync";
 import {
-  listDoctors,
+  subscribeDoctors,
   setDoctorActive,
   deleteDoctor,
   upsertDoctor,
 } from "@/lib/api";
+import { isDoctorOnline, isOnDutyNow } from "@/utils/presence";
+import { relativeTime } from "@/utils/format";
 import { createDoctorAccount } from "@/lib/adminAccounts";
 import { authErrorMessage } from "@/utils/authErrors";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -47,7 +49,17 @@ const empty = {
 };
 
 export default function AdminDoctors() {
-  const { data, loading, reload } = useAsync(() => listDoctors(), []);
+  const [data, setData] = useState<Doctor[] | null>(null);
+  const loading = data === null;
+  // Live subscription keeps presence (online/offline) fresh automatically.
+  useEffect(() => subscribeDoctors(setData), []);
+  // Re-render on a timer so the "last seen" freshness guard stays accurate.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(id);
+  }, []);
+  const reload = () => {}; // snapshots update the list automatically
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Doctor | null>(null);
   const [adding, setAdding] = useState(false);
@@ -193,10 +205,21 @@ export default function AdminDoctors() {
         />
       ) : (
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((d) => (
+          {filtered.map((d) => {
+            const online = isDoctorOnline(d);
+            const onDuty = isOnDutyNow(d);
+            return (
             <Card key={d.uid} className="flex flex-col">
               <div className="flex items-start gap-3">
-                <Avatar name={d.name} src={d.photoURL} size="lg" />
+                <div className="relative">
+                  <Avatar name={d.name} src={d.photoURL} size="lg" />
+                  <span
+                    title={online ? "Online" : "Offline"}
+                    className={`absolute -bottom-0.5 -right-0.5 h-4 w-4 rounded-full border-2 border-surface ${
+                      online ? "bg-emerald-500" : "bg-gray-300"
+                    }`}
+                  />
+                </div>
                 <div className="min-w-0 flex-1">
                   <h3 className="truncate font-display font-bold text-ink">
                     {d.name}
@@ -206,10 +229,30 @@ export default function AdminDoctors() {
                     <Mail className="h-3 w-3" /> {d.email}
                   </p>
                 </div>
-                <Badge tone={d.active ? "green" : "gray"} dot>
-                  {d.active ? "Active" : "Inactive"}
-                </Badge>
+                <div className="flex flex-col items-end gap-1.5">
+                  <Badge tone={online ? "green" : "gray"} dot>
+                    {online ? "Online" : "Offline"}
+                  </Badge>
+                  {!d.active && <Badge tone="gray">Inactive</Badge>}
+                </div>
               </div>
+
+              <div className="mt-2 text-xs text-ink-muted">
+                {online ? (
+                  "Active in panel now"
+                ) : d.lastSeenAt ? (
+                  <>Last seen {relativeTime(d.lastSeenAt)}</>
+                ) : (
+                  "Never signed in"
+                )}
+              </div>
+
+              {!online && onDuty && (
+                <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  Scheduled on duty now but offline
+                </div>
+              )}
 
               <div className="mt-4 flex items-center justify-between border-t border-surface-muted pt-3 text-sm">
                 <span className="flex items-center gap-1 text-ink-muted">
@@ -244,7 +287,8 @@ export default function AdminDoctors() {
                 </Button>
               </div>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 

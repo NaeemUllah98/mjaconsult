@@ -84,3 +84,66 @@ export function optimized(url: string, width = 400): string {
   if (!url.includes("/upload/")) return url;
   return url.replace("/upload/", `/upload/f_auto,q_auto,w_${width},c_limit/`);
 }
+
+export interface FileUploadResult {
+  url: string;
+  name: string;
+  type: "image" | "file";
+}
+
+/**
+ * Upload an arbitrary report/attachment (image OR PDF) to Cloudinary. Uses the
+ * `auto` resource type so non-image files (e.g. PDF lab reports) work with the
+ * same unsigned preset. Patients use this to share reports with their doctor.
+ */
+export async function uploadFile(
+  file: File,
+  folder = "reports",
+  onProgress?: (percent: number) => void,
+): Promise<FileUploadResult> {
+  if (!isCloudinaryConfigured) {
+    throw new Error(
+      "Cloudinary is not configured. Add VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET to your .env file.",
+    );
+  }
+
+  const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+  if (file.size > MAX_BYTES) {
+    throw new Error("File is too large. Please choose a file under 10 MB.");
+  }
+  const isImage = file.type.startsWith("image/");
+  const isPdf = file.type === "application/pdf";
+  if (!isImage && !isPdf) {
+    throw new Error("Only images and PDF reports can be shared.");
+  }
+
+  const endpoint = `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`;
+  const form = new FormData();
+  form.append("file", file);
+  form.append("upload_preset", UPLOAD_PRESET);
+  form.append("folder", folder);
+
+  return new Promise<FileUploadResult>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", endpoint);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        const data = JSON.parse(xhr.responseText);
+        resolve({
+          url: data.secure_url,
+          name: file.name,
+          type: isImage ? "image" : "file",
+        });
+      } else {
+        reject(new Error("Upload failed. Please try again."));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Network error during upload."));
+    xhr.send(form);
+  });
+}

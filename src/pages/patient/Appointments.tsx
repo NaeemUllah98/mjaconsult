@@ -16,11 +16,14 @@ import {
   cancelAppointment,
   updateAppointment,
   listAdmins,
+  getPaymentSettings,
 } from "@/lib/api";
 import { ensureThread } from "@/lib/chat";
+import { PaymentInfo } from "@/components/shared/PaymentInfo";
 import { notify } from "@/lib/notifications";
 import { requestMeetLink } from "@/lib/meet";
 import { isPaid, canRequestMeet, canMessage } from "@/utils/appointment";
+import { formatCurrency } from "@/utils/format";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AppointmentCard } from "@/components/shared/AppointmentCard";
 import { Button } from "@/components/ui/Button";
@@ -40,6 +43,7 @@ export default function PatientAppointments() {
     () => listAppointmentsFor("patientId", user!.uid),
     [user?.uid],
   );
+  const { data: paySettings } = useAsync(() => getPaymentSettings(), []);
   const [tab, setTab] = useState<Tab>("upcoming");
   const [payFor, setPayFor] = useState<Appointment | null>(null);
   const [proofUrl, setProofUrl] = useState("");
@@ -224,10 +228,16 @@ export default function PatientAppointments() {
                       <Video className="h-4 w-4" /> Request Meet link
                     </Button>
                   )}
-                  {appt.status === "confirmed" && !isPaid(appt) && (
+                  {appt.paymentStatus === "proof_submitted" && (
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600">
+                      <Receipt className="h-3.5 w-3.5" /> Payment under review —
+                      your slot will be confirmed once verified
+                    </span>
+                  )}
+                  {isPaid(appt) && appt.status !== "cancelled" && (
                     <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
                       <MessageSquare className="h-3.5 w-3.5" /> Messaging &amp;
-                      Meet link unlock after payment is verified
+                      Meet link open during your appointment slot
                     </span>
                   )}
                   {appt.status !== "cancelled" &&
@@ -265,12 +275,25 @@ export default function PatientAppointments() {
           </>
         }
       >
-        <ImageUploader
-          value={proofUrl}
-          onUploaded={setProofUrl}
-          folder="payment-proofs"
-          hint="Screenshot of your bank transfer / payment receipt"
-        />
+        <div className="space-y-4">
+          {payFor && !payFor.isFree && (
+            <div className="flex items-center justify-between rounded-xl bg-brand-gradient-soft px-4 py-3">
+              <span className="text-sm font-semibold text-brand-900">
+                Amount due
+              </span>
+              <span className="font-display text-xl font-extrabold text-brand-900">
+                {formatCurrency(payFor.fee, "USD")}
+              </span>
+            </div>
+          )}
+          {paySettings && <PaymentInfo settings={paySettings} />}
+          <ImageUploader
+            value={proofUrl}
+            onUploaded={setProofUrl}
+            folder="payment-proofs"
+            hint="Screenshot of your bank transfer / payment receipt"
+          />
+        </div>
       </Modal>
 
       <ConfirmDialog

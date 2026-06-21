@@ -10,6 +10,8 @@ import type {
   AppNotification,
   TimeSlot,
   Weekday,
+  PaymentSettings,
+  SiteSettings,
 } from "@/types";
 
 export interface DemoDB {
@@ -20,8 +22,35 @@ export interface DemoDB {
   chats: ChatThread[];
   messages: Record<string, ChatMessage[]>;
   notifications: AppNotification[];
+  /** Admin-set password overrides (uid -> password), demo only. */
+  passwordOverrides: Record<string, string>;
+  /** Admin-editable payment accounts shown on the booking popup. */
+  paymentSettings: PaymentSettings;
+  /** Public site settings (e.g. promoted homepage doctor). */
+  siteSettings: SiteSettings;
   currentUid: string | null;
 }
+
+/** Default site settings — empty means the landing page auto-picks a doctor. */
+export const DEFAULT_SITE_SETTINGS: SiteSettings = {
+  featuredDoctorId: "",
+};
+
+/** Default placeholder payment accounts for demo mode. */
+export const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
+  pkAccount: {
+    bank: "Meezan Bank (Pakistan)",
+    title: "MJACONSULT",
+    number: "PK00 MEZN 0000 0000 0000 0000",
+  },
+  uaeAccount: {
+    bank: "Emirates NBD (UAE)",
+    title: "MJACONSULT",
+    number: "AE00 0000 0000 0000 0000 000",
+  },
+  instructions:
+    "Transfer the consultation fee to either account, then upload your payment proof for verification.",
+};
 
 /** Demo login credentials shown on the sign-in screen. */
 export const DEMO_CREDENTIALS = [
@@ -73,6 +102,8 @@ export function buildSeed(): DemoDB {
       reviewCount: 214,
       availability: avail(days("monday", "tuesday", "wednesday", "thursday", "friday"), "09:00", "13:00"),
       slotDurationMins: 30,
+      online: true,
+      lastSeenAt: today,
       createdAt: subDays(today, 120),
     },
     {
@@ -113,6 +144,8 @@ export function buildSeed(): DemoDB {
       reviewCount: 320,
       availability: avail(days("tuesday", "thursday"), "10:00", "15:00"),
       slotDurationMins: 30,
+      online: true,
+      lastSeenAt: today,
       createdAt: subDays(today, 200),
     },
     {
@@ -201,7 +234,32 @@ export function buildSeed(): DemoDB {
   const sarah = doctors[0];
   const derm = doctors[1];
 
+  // A consultation happening *right now* so chat + report sharing are usable
+  // in the demo without waiting for a slot. Window: 15 min ago → 45 min ahead.
+  const hm = (d: Date) =>
+    `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const liveStart = new Date(today.getTime() - 15 * 60_000);
+  const liveEnd = new Date(today.getTime() + 45 * 60_000);
+
   const appointments: Appointment[] = [
+    {
+      id: "demo-appt-live",
+      patientId: patient.uid,
+      patientName: patient.name,
+      patientPhone: patient.phone,
+      patientEmail: patient.email,
+      doctorId: sarah.uid,
+      doctorName: sarah.name,
+      doctorSpecialization: sarah.specialization,
+      date: iso(today),
+      slot: { start: hm(liveStart), end: hm(liveEnd) },
+      status: "confirmed",
+      reason: "Live consultation in progress.",
+      fee: 60,
+      isFree: false,
+      paymentStatus: "verified",
+      createdAt: subDays(today, 1),
+    },
     {
       id: "demo-appt-1",
       patientId: patient.uid,
@@ -310,6 +368,9 @@ export function buildSeed(): DemoDB {
       type: "promo",
       title: "20% off your first consultation",
       description: "New to MJACONSULT? Get 20% off your very first online consultation with any specialist this month.",
+      discountType: "percent",
+      discountValue: 20,
+      doctorIds: [],
       active: true,
       expiresAt: iso(addDays(today, 21)),
       createdAt: subDays(today, 3),
@@ -319,6 +380,8 @@ export function buildSeed(): DemoDB {
       type: "free_campaign",
       title: "Free Heart Health Camp",
       description: "Free cardiology consultations with Dr. Sarah Khan every Friday this month. Book your free slot now!",
+      discountType: "free",
+      doctorIds: ["demo-doc-1"],
       active: true,
       expiresAt: iso(addDays(today, 28)),
       createdAt: subDays(today, 1),
@@ -340,6 +403,9 @@ export function buildSeed(): DemoDB {
     chats,
     messages,
     notifications,
+    passwordOverrides: {},
+    paymentSettings: DEFAULT_PAYMENT_SETTINGS,
+    siteSettings: DEFAULT_SITE_SETTINGS,
     currentUid: null,
   };
 }

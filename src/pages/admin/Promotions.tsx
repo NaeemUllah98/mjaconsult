@@ -16,7 +16,7 @@ import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ImageUploader } from "@/components/ui/ImageUploader";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
-import type { Promotion, PromotionType } from "@/types";
+import type { Promotion, PromotionType, DiscountType } from "@/types";
 
 const empty = {
   type: "promo" as PromotionType,
@@ -24,6 +24,8 @@ const empty = {
   description: "",
   imageUrl: "",
   expiresAt: "",
+  discountType: "percent" as DiscountType,
+  discountValue: 0,
   active: true,
 };
 
@@ -51,6 +53,8 @@ export default function AdminPromotions() {
       description: p.description,
       imageUrl: p.imageUrl ?? "",
       expiresAt: p.expiresAt ?? "",
+      discountType: p.discountType ?? (p.type === "free_campaign" ? "free" : "percent"),
+      discountValue: p.discountValue ?? 0,
       active: p.active,
     });
     setEditing(p);
@@ -61,12 +65,15 @@ export default function AdminPromotions() {
     e.preventDefault();
     setSaving(true);
     try {
+      const isFreeCampaign = form.type === "free_campaign";
       const payload = {
         type: form.type,
         title: form.title,
         description: form.description,
         imageUrl: form.imageUrl,
         expiresAt: form.expiresAt,
+        discountType: isFreeCampaign ? ("free" as DiscountType) : form.discountType,
+        discountValue: Number(form.discountValue) || 0,
         active: form.active,
         doctorIds: [],
       };
@@ -193,6 +200,40 @@ export default function AdminPromotions() {
             onChange={set("description")}
             required
           />
+
+          {form.type === "free_campaign" ? (
+            <div className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-700">
+              Patients who book through this campaign pay <strong>nothing</strong>{" "}
+              — the consultation is free.
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Select
+                label="Discount type"
+                value={form.discountType}
+                onChange={set("discountType")}
+              >
+                <option value="percent">Percentage off</option>
+                <option value="flat">Flat amount off</option>
+                <option value="free">Make it free</option>
+                <option value="none">No fee change</option>
+              </Select>
+              {(form.discountType === "percent" || form.discountType === "flat") && (
+                <Input
+                  label={
+                    form.discountType === "percent"
+                      ? "Percent off (%)"
+                      : "Amount off"
+                  }
+                  type="number"
+                  value={form.discountValue}
+                  onChange={set("discountValue")}
+                  hint="Applied to the doctor's fee at booking"
+                />
+              )}
+            </div>
+          )}
+
           <Input
             label="Expires on (optional)"
             type="date"

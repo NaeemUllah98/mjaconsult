@@ -10,10 +10,10 @@ Patients book appointments, pay via uploaded proof, chat securely with doctors, 
 
 | Panel | Capabilities |
 |-------|-------------|
-| **Patient** | Register/login, browse doctors, view availability calendars, book slots (auto-confirmed), upload payment proof, chat, join Google Meet, view offers, manage profile |
-| **Doctor** | Set weekly availability, manage calendar, view appointments, verify payments, generate/share Meet links, chat with patients, edit professional profile & fees |
-| **Admin** | Add/edit/activate/deactivate/delete doctors, manage patients, monitor all appointments, broadcast promotions & free campaigns, dashboard analytics |
-| **System** | Atomic slot-locking (no double-booking), real-time chat, in-app + email reminders, role-based protected routing |
+| **Patient** | Register/login, browse doctors, book slots, see PK/UAE bank accounts on a payment popup, upload payment proof, **claim promo offers (auto-discounted fee)**, **share reports (image/PDF) in chat**, chat & request a Meet link **during the appointment slot**, manage profile |
+| **Doctor** | Set weekly availability, manage calendar, view appointments, generate/share Meet links, chat with patients (slot-gated), edit professional profile & fees |
+| **Admin** | Add/edit/activate/deactivate/delete doctors, **see which doctors are online/offline (and off-duty)**, manage patients, **reset patient passwords**, verify payments (confirms the slot), broadcast promotions with **fee criteria**, **edit payment accounts + pick the promoted homepage doctor (Settings)**, **export patient/doctor/whole-hospital data to Excel**, dashboard analytics |
+| **System** | Atomic slot-locking (no double-booking), real-time chat, presence heartbeat, in-app + email reminders, role-based protected routing |
 
 ---
 
@@ -101,6 +101,8 @@ firebase deploy --only firestore:rules,firestore:indexes
 VITE_CLOUDINARY_CLOUD_NAME=your_cloud_name
 VITE_CLOUDINARY_UPLOAD_PRESET=your_unsigned_preset
 ```
+
+> Profile pics & payment proofs are images; **shared chat reports** also allow **PDF** (uploaded via Cloudinary's `auto` resource type). The default unsigned preset handles both. If PDF uploads are blocked, enable *raw/auto* delivery for your account under **Settings → Security**.
 
 ### 3) EmailJS — email reminders *(optional but recommended)*
 
@@ -197,12 +199,13 @@ src/
 
 ## 💳 Payment flow (manual verification)
 
-1. Patient books → appointment is **auto-confirmed**, payment marked **unpaid**.
-2. Patient uploads a **payment proof** screenshot (Cloudinary) from *My Appointments*.
-3. Doctor (or admin) reviews the proof → **Verify** or **Reject**.
-4. Patient is notified of the result.
+1. Patient picks a slot → appointment is created as **pending**, payment **unpaid**.
+2. A **payment popup** shows the **Pakistan + UAE bank accounts** (edit these under **Admin → Settings**) → patient clicks **OK** and uploads a **payment proof** (image, via Cloudinary).
+3. **Admin** reviews the proof under *Appointments → Payment reviews* → **Approve** (confirms the slot, patient & doctor notified) or **Reject**.
+4. Once confirmed, the patient can **message the doctor and request a Meet link only during the booked slot**. When the slot ends, messaging closes ("appointment time is over").
+5. **Promo offers** apply a discount (percent / flat / free) to the fee automatically when the patient books through *Offers*.
 
-No payment gateway needed = no fees.
+No payment gateway needed = no fees. Bank-account details live in Firestore `settings/payment` and are edited in-app — replace the placeholder accounts under **Admin → Settings**.
 
 ---
 

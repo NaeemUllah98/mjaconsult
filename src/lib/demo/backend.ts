@@ -4,6 +4,7 @@ import {
   DEMO_PASSWORDS,
   DEFAULT_PAYMENT_SETTINGS,
   DEFAULT_SITE_SETTINGS,
+  DEFAULT_BANNERS,
   type DemoDB,
 } from "./seed";
 import type {
@@ -17,6 +18,7 @@ import type {
   TimeSlot,
   PaymentSettings,
   SiteSettings,
+  Banner,
 } from "@/types";
 
 /** Attachment payload shared between the real and demo chat backends. */
@@ -29,7 +31,7 @@ export interface MessageAttachment {
 /** DEMO mode is active whenever Firebase keys are absent. */
 export const DEMO = !isFirebaseConfigured;
 
-const STORAGE_KEY = "mjaconsult_demo_db_v2";
+const STORAGE_KEY = "mjaconsult_demo_db_v3";
 
 // ---- persistence --------------------------------------------------------
 
@@ -533,5 +535,16 @@ export function demoGetSiteSettings(): SiteSettings {
 
 export function demoSaveSiteSettings(settings: SiteSettings) {
   db.siteSettings = settings;
+  save();
+}
+
+export function demoListBanners(activeOnly = false): Banner[] {
+  const list = db.banners ?? DEFAULT_BANNERS;
+  const filtered = activeOnly ? list.filter((b) => b.active) : list;
+  return clone([...filtered].sort((a, b) => a.order - b.order));
+}
+
+export function demoSaveBanners(banners: Banner[]) {
+  db.banners = banners;
   save();
 }

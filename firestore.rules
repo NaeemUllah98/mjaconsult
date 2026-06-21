@@ -103,9 +103,9 @@ service cloud.firestore {
 
     // ---- settings ----------------------------------------------
     // Payment accounts shown to patients on the booking popup; the public
-    // `site` doc (promoted homepage doctor) is readable by anyone.
+    // `site` and `banners` docs are readable by anyone (landing page).
     match /settings/{docId} {
-      allow read: if isSignedIn() || docId == "site";
+      allow read: if isSignedIn() || docId == "site" || docId == "banners";
       allow write: if isAdmin();      // only admins edit
     }
 

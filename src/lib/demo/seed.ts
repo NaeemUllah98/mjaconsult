@@ -12,6 +12,7 @@ import type {
   Weekday,
   PaymentSettings,
   SiteSettings,
+  Banner,
 } from "@/types";
 
 export interface DemoDB {
@@ -28,6 +29,8 @@ export interface DemoDB {
   paymentSettings: PaymentSettings;
   /** Public site settings (e.g. promoted homepage doctor). */
   siteSettings: SiteSettings;
+  /** Homepage banner/video slideshow items. */
+  banners: Banner[];
   currentUid: string | null;
 }
 
@@ -35,6 +38,46 @@ export interface DemoDB {
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   featuredDoctorId: "",
 };
+
+/** Sample homepage banners shown in demo mode. */
+export const DEFAULT_BANNERS: Banner[] = [
+  {
+    id: "demo-banner-1",
+    type: "image",
+    url: "https://images.unsplash.com/photo-1576091160550-2173dba999ef?w=1280&q=80",
+    title: "World-Class Healthcare, Online",
+    subtitle: "Consult qualified doctors from the comfort of your home — secure, fast and affordable.",
+    link: "/register",
+    linkLabel: "Book a consultation",
+    active: true,
+    order: 1,
+    createdAt: new Date(),
+  },
+  {
+    id: "demo-banner-2",
+    type: "image",
+    url: "https://images.unsplash.com/photo-1631217868264-e5b90bb7e133?w=1280&q=80",
+    title: "Free Heart Health Campaign",
+    subtitle: "Dr. Sarah Khan is offering free cardiology consultations every Friday this month.",
+    link: "/register",
+    linkLabel: "Claim your free slot",
+    active: true,
+    order: 2,
+    createdAt: new Date(),
+  },
+  {
+    id: "demo-banner-3",
+    type: "image",
+    url: "https://images.unsplash.com/photo-1559757175-5700dde675bc?w=1280&q=80",
+    title: "New Patients Get 20% Off",
+    subtitle: "Register today and get 20% off your first online consultation with any specialist.",
+    link: "/register",
+    linkLabel: "Register now",
+    active: false,
+    order: 3,
+    createdAt: new Date(),
+  },
+];
 
 /** Default placeholder payment accounts for demo mode. */
 export const DEFAULT_PAYMENT_SETTINGS: PaymentSettings = {
@@ -406,6 +449,7 @@ export function buildSeed(): DemoDB {
     passwordOverrides: {},
     paymentSettings: DEFAULT_PAYMENT_SETTINGS,
     siteSettings: DEFAULT_SITE_SETTINGS,
+    banners: DEFAULT_BANNERS,
     currentUid: null,
   };
 }

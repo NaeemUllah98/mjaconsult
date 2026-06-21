@@ -177,6 +177,25 @@ export interface SiteSettings {
   featuredDoctorId?: string;
 }
 
+export type BannerMediaType = "image" | "video";
+
+/** A homepage banner/video slide managed by the admin in `settings/banners`. */
+export interface Banner {
+  id: string;
+  /** "image" = Cloudinary/any image URL; "video" = YouTube URL. */
+  type: BannerMediaType;
+  url: string;
+  title?: string;
+  subtitle?: string;
+  /** Optional CTA button destination. */
+  link?: string;
+  linkLabel?: string;
+  active: boolean;
+  /** Display order (ascending). */
+  order: number;
+  createdAt?: FireDate;
+}
+
 export interface AppNotification {
   id: string;
   userId: string;

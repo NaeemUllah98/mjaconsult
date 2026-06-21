@@ -18,7 +18,7 @@ import {
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth, db } from "./firebase";
 import * as demo from "./demo/backend";
-import { DEFAULT_PAYMENT_SETTINGS, DEFAULT_SITE_SETTINGS } from "./demo/seed";
+import { DEFAULT_PAYMENT_SETTINGS, DEFAULT_SITE_SETTINGS, DEFAULT_BANNERS } from "./demo/seed";
 import type {
   AppUser,
   Doctor,
@@ -27,6 +27,7 @@ import type {
   TimeSlot,
   PaymentSettings,
   SiteSettings,
+  Banner,
 } from "@/types";
 
 const DEMO = demo.DEMO;
@@ -343,4 +344,21 @@ export async function getSiteSettings(): Promise<SiteSettings> {
 export async function saveSiteSettings(settings: SiteSettings): Promise<void> {
   if (DEMO) return demo.demoSaveSiteSettings(settings);
   await setDoc(doc(db, "settings", "site"), settings, { merge: true });
+}
+
+export async function listBanners(activeOnly = false): Promise<Banner[]> {
+  if (DEMO) return demo.demoListBanners(activeOnly);
+  try {
+    const snap = await getDoc(doc(db, "settings", "banners"));
+    const items: Banner[] = snap.exists() ? ((snap.data().items as Banner[]) ?? []) : DEFAULT_BANNERS;
+    const sorted = [...items].sort((a, b) => a.order - b.order);
+    return activeOnly ? sorted.filter((b) => b.active) : sorted;
+  } catch {
+    return activeOnly ? DEFAULT_BANNERS.filter((b) => b.active) : DEFAULT_BANNERS;
+  }
+}
+
+export async function saveBanners(banners: Banner[]): Promise<void> {
+  if (DEMO) return demo.demoSaveBanners(banners);
+  await setDoc(doc(db, "settings", "banners"), { items: banners }, { merge: false });
 }

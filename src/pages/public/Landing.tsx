@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { Logo } from "@/components/ui/Logo";
 import { Button } from "@/components/ui/Button";
+import { HeroSlideshow } from "@/components/shared/HeroSlideshow";
 import { useAuth } from "@/context/AuthContext";
 import { homeForRole } from "@/routes/guards";
 import { getSiteSettings, getDoctor, listDoctors } from "@/lib/api";
@@ -145,6 +146,9 @@ export default function Landing() {
           </div>
         </div>
       </header>
+
+      {/* Banner slideshow */}
+      <HeroSlideshow />
 
       {/* Hero */}
       <section className="relative bg-hero-glow">

@@ -36,6 +36,7 @@ const AdminMessages = lazy(() => import("@/pages/admin/Messages"));
 const AdminPromotions = lazy(() => import("@/pages/admin/Promotions"));
 const AdminDataExport = lazy(() => import("@/pages/admin/DataExport"));
 const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
+const AdminBanners = lazy(() => import("@/pages/admin/Banners"));
 
 export default function App() {
   return (
@@ -113,6 +114,7 @@ export default function App() {
           <Route path="appointments" element={<AdminAppointments />} />
           <Route path="messages" element={<AdminMessages />} />
           <Route path="promotions" element={<AdminPromotions />} />
+          <Route path="banners" element={<AdminBanners />} />
           <Route path="export" element={<AdminDataExport />} />
           <Route path="settings" element={<AdminSettings />} />
         </Route>

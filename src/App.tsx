@@ -18,6 +18,7 @@ const PatientDashboard = lazy(() => import("@/pages/patient/Dashboard"));
 const BrowseDoctors = lazy(() => import("@/pages/patient/BrowseDoctors"));
 const DoctorProfile = lazy(() => import("@/pages/patient/DoctorProfile"));
 const PatientAppointments = lazy(() => import("@/pages/patient/Appointments"));
+const PatientPrescriptions = lazy(() => import("@/pages/patient/Prescriptions"));
 const PatientChat = lazy(() => import("@/pages/patient/Chat"));
 const PatientPromotions = lazy(() => import("@/pages/patient/Promotions"));
 const PatientProfile = lazy(() => import("@/pages/patient/Profile"));
@@ -37,6 +38,7 @@ const AdminPromotions = lazy(() => import("@/pages/admin/Promotions"));
 const AdminDataExport = lazy(() => import("@/pages/admin/DataExport"));
 const AdminSettings = lazy(() => import("@/pages/admin/Settings"));
 const AdminBanners = lazy(() => import("@/pages/admin/Banners"));
+const AdminPrescriptions = lazy(() => import("@/pages/admin/Prescriptions"));
 
 export default function App() {
   return (
@@ -78,6 +80,7 @@ export default function App() {
           <Route path="doctors" element={<BrowseDoctors />} />
           <Route path="doctors/:id" element={<DoctorProfile />} />
           <Route path="appointments" element={<PatientAppointments />} />
+          <Route path="prescriptions" element={<PatientPrescriptions />} />
           <Route path="chat" element={<PatientChat />} />
           <Route path="promotions" element={<PatientPromotions />} />
           <Route path="profile" element={<PatientProfile />} />
@@ -112,6 +115,7 @@ export default function App() {
           <Route path="doctors" element={<AdminDoctors />} />
           <Route path="patients" element={<AdminPatients />} />
           <Route path="appointments" element={<AdminAppointments />} />
+          <Route path="prescriptions" element={<AdminPrescriptions />} />
           <Route path="messages" element={<AdminMessages />} />
           <Route path="promotions" element={<AdminPromotions />} />
           <Route path="banners" element={<AdminBanners />} />

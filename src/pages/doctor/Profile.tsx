@@ -113,6 +113,29 @@ function Form({
               {form.currency} {form.fees}
             </p>
           </div>
+
+          <div className="mt-4 w-full rounded-xl border border-surface-muted p-3">
+            <p className="mb-2 text-xs font-medium text-ink-muted">
+              Signature stamp (on your prescriptions)
+            </p>
+            {doctor?.stampUrl ? (
+              <>
+                <img
+                  src={doctor.stampUrl}
+                  alt="Your signature stamp"
+                  className="mx-auto max-h-16 object-contain"
+                />
+                <p className="mt-2 text-[11px] text-ink-muted">
+                  Managed by the admin
+                </p>
+              </>
+            ) : (
+              <p className="text-[11px] text-ink-muted">
+                Not assigned yet — ask the admin to upload your stamp so it
+                appears on prescriptions you issue.
+              </p>
+            )}
+          </div>
         </Card>
 
         <Card className="space-y-4 lg:col-span-2">

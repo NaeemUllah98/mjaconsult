@@ -5,6 +5,7 @@ import type {
   Doctor,
   Appointment,
   Promotion,
+  Prescription,
   ChatThread,
   ChatMessage,
   AppNotification,
@@ -20,6 +21,7 @@ export interface DemoDB {
   doctors: Doctor[];
   appointments: Appointment[];
   promotions: Promotion[];
+  prescriptions: Prescription[];
   chats: ChatThread[];
   messages: Record<string, ChatMessage[]>;
   notifications: AppNotification[];
@@ -34,9 +36,49 @@ export interface DemoDB {
   currentUid: string | null;
 }
 
+// ---- Stamps -------------------------------------------------------------
+// Inline SVG seals used as zero-cost defaults / demo samples. In a real
+// deployment the admin uploads PNG stamps (Cloudinary) which replace these.
+
+const svgDataUri = (svg: string) =>
+  `data:image/svg+xml,${encodeURIComponent(svg.replace(/\s+/g, " ").trim())}`;
+
+/** Universal MJACONSULT circular company seal (default until admin uploads). */
+export const DEFAULT_COMPANY_STAMP = svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <path id="rxTop" d="M 28,100 A 72,72 0 0 1 172,100"/>
+    <path id="rxBot" d="M 40,100 A 60,60 0 0 0 160,100"/>
+  </defs>
+  <circle cx="100" cy="100" r="94" fill="none" stroke="#0d3b54" stroke-width="3"/>
+  <circle cx="100" cy="100" r="78" fill="none" stroke="#2a9d8f" stroke-width="2"/>
+  <text font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#0d3b54" letter-spacing="2">
+    <textPath href="#rxTop" startOffset="50%" text-anchor="middle">MJACONSULT</textPath>
+  </text>
+  <text font-family="Arial, sans-serif" font-size="11" font-weight="700" fill="#2a9d8f" letter-spacing="3">
+    <textPath href="#rxBot" startOffset="50%" text-anchor="middle">ONLINE HEALTH CARE</textPath>
+  </text>
+  <g transform="translate(100,106)">
+    <path d="M0,-13 C -7,-25 -27,-13 0,9 C 27,-13 7,-25 0,-13 Z" fill="#2c7da0"/>
+    <path d="M-19,3 H -7 L -3,-9 L 3,11 L 8,1 H 19" fill="none" stroke="#0d3b54" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="100" y="150" font-family="Arial, sans-serif" font-size="9" font-weight="700" fill="#1b4f6c" letter-spacing="2" text-anchor="middle">VERIFIED</text>
+</svg>`);
+
+/** A stylised doctor signature stamp for demo doctors. */
+const doctorStamp = (name: string, line1: string, line2: string) =>
+  svgDataUri(`
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 130">
+  <text x="22" y="52" font-family="'Segoe Script','Brush Script MT',cursive" font-size="38" font-style="italic" font-weight="700" fill="#0d3b54">${name}</text>
+  <line x1="20" y1="66" x2="300" y2="66" stroke="#2a9d8f" stroke-width="1.6"/>
+  <text x="24" y="88" font-family="Arial, sans-serif" font-size="16" font-style="italic" fill="#1b4f6c">${line1}</text>
+  <text x="24" y="108" font-family="Arial, sans-serif" font-size="14" font-style="italic" fill="#2c7da0">${line2}</text>
+</svg>`);
+
 /** Default site settings — empty means the landing page auto-picks a doctor. */
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
   featuredDoctorId: "",
+  companyStampUrl: DEFAULT_COMPANY_STAMP,
 };
 
 /** Sample homepage banners shown in demo mode. */
@@ -145,6 +187,8 @@ export function buildSeed(): DemoDB {
       reviewCount: 214,
       availability: avail(days("monday", "tuesday", "wednesday", "thursday", "friday"), "09:00", "13:00"),
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
+      stampUrl: doctorStamp("Dr. Sarah Khan", "Consultant Cardiologist", "MBBS, MD (Cardiology)"),
       online: true,
       lastSeenAt: today,
       createdAt: subDays(today, 120),
@@ -167,6 +211,7 @@ export function buildSeed(): DemoDB {
       reviewCount: 96,
       availability: avail(days("monday", "wednesday", "friday"), "14:00", "18:00"),
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
       createdAt: subDays(today, 90),
     },
     {
@@ -187,6 +232,7 @@ export function buildSeed(): DemoDB {
       reviewCount: 320,
       availability: avail(days("tuesday", "thursday"), "10:00", "15:00"),
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
       online: true,
       lastSeenAt: today,
       createdAt: subDays(today, 200),
@@ -209,6 +255,8 @@ export function buildSeed(): DemoDB {
       reviewCount: 150,
       availability: avail(days("monday", "tuesday", "wednesday", "thursday"), "11:00", "16:00"),
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
+      stampUrl: doctorStamp("Dr. John Smith", "Specialist in Neurology", "Stroke Specialist"),
       createdAt: subDays(today, 60),
     },
     {
@@ -229,6 +277,7 @@ export function buildSeed(): DemoDB {
       reviewCount: 78,
       availability: avail(days("wednesday", "thursday", "friday", "saturday"), "12:00", "17:00"),
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
       createdAt: subDays(today, 30),
     },
   ];
@@ -405,6 +454,32 @@ export function buildSeed(): DemoDB {
     ],
   };
 
+  const prescriptions: Prescription[] = [
+    {
+      id: "demo-appt-3",
+      appointmentId: "demo-appt-3",
+      doctorId: sarah.uid,
+      doctorName: sarah.name,
+      doctorSpecialization: sarah.specialization,
+      patientId: patient.uid,
+      patientName: patient.name,
+      patientAge: "54",
+      patientSex: "male",
+      date: iso(subDays(today, 14)),
+      diagnosis: "Stage-1 hypertension with mild exertional dyspnoea.",
+      medicines: [
+        { name: "Tab. Amlodipine 5mg", dosage: "1 tab", frequency: "Once daily", duration: "30 days" },
+        { name: "Tab. Aspirin 75mg", dosage: "1 tab", frequency: "Once daily", duration: "30 days" },
+      ],
+      advice: "Low-salt diet, walk 30 min daily, monitor BP every morning.",
+      followUpDate: iso(addDays(today, 16)),
+      doctorStampUrl: sarah.stampUrl,
+      companyStampUrl: DEFAULT_COMPANY_STAMP,
+      createdAt: subDays(today, 14),
+      updatedAt: subDays(today, 14),
+    },
+  ];
+
   const promotions: Promotion[] = [
     {
       id: "demo-promo-1",
@@ -443,6 +518,7 @@ export function buildSeed(): DemoDB {
     doctors,
     appointments,
     promotions,
+    prescriptions,
     chats,
     messages,
     notifications,

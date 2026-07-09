@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CalendarCheck,
@@ -7,6 +7,7 @@ import {
   Receipt,
   Video,
   MessageSquare,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
@@ -17,22 +18,29 @@ import {
   updateAppointment,
   listAdmins,
   getPaymentSettings,
+  listPrescriptionsFor,
 } from "@/lib/api";
 import { ensureThread } from "@/lib/chat";
 import { PaymentInfo } from "@/components/shared/PaymentInfo";
-import { notify } from "@/lib/notifications";
+import { notify, notifyMany, adminRecipients } from "@/lib/notifications";
 import { requestMeetLink } from "@/lib/meet";
-import { isPaid, canRequestMeet, canMessage } from "@/utils/appointment";
+import {
+  isPaid,
+  canRequestMeet,
+  canMessage,
+  isUpcomingDate,
+  isPastDate,
+} from "@/utils/appointment";
 import { formatCurrency } from "@/utils/format";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AppointmentCard } from "@/components/shared/AppointmentCard";
+import { PrescriptionViewer } from "@/components/shared/PrescriptionViewer";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ImageUploader } from "@/components/ui/ImageUploader";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
-import { isAfter, parseISO, startOfToday } from "date-fns";
-import type { Appointment } from "@/types";
+import type { Appointment, Prescription } from "@/types";
 
 type Tab = "upcoming" | "past" | "all";
 
@@ -50,16 +58,27 @@ export default function PatientAppointments() {
   const [cancelFor, setCancelFor] = useState<Appointment | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Prescriptions issued to this patient, keyed by appointment id.
+  const [rxMap, setRxMap] = useState<Record<string, Prescription>>({});
+  useEffect(() => {
+    if (!user?.uid) return;
+    listPrescriptionsFor("patientId", user.uid).then((list) => {
+      const m: Record<string, Prescription> = {};
+      list.forEach((p) => (m[p.appointmentId] = p));
+      setRxMap(m);
+    });
+  }, [user?.uid]);
+  const [viewing, setViewing] = useState<Prescription | null>(null);
+
   const filtered = useMemo(() => {
     const appts = data ?? [];
     if (tab === "all") return appts;
-    const today = startOfToday();
     if (tab === "upcoming")
       return appts.filter(
-        (a) => a.status !== "cancelled" && isAfter(parseISO(a.date), today),
+        (a) => a.status !== "cancelled" && isUpcomingDate(a.date),
       );
     return appts.filter(
-      (a) => a.status === "completed" || !isAfter(parseISO(a.date), today),
+      (a) => a.status === "completed" || isPastDate(a.date),
     );
   }, [data, tab]);
 
@@ -100,7 +119,7 @@ export default function PatientAppointments() {
     setBusy(true);
     try {
       await requestMeetLink(appt, user!.name);
-      toast.success("Meet link requested — the admin will share it shortly");
+      toast.success("Your doctor has been notified to share the Meet link");
       reload();
     } catch {
       toast.error("Could not send request. Please try again.");
@@ -126,12 +145,24 @@ export default function PatientAppointments() {
     setBusy(true);
     try {
       await cancelAppointment(cancelFor);
-      await notify({
-        userId: cancelFor.doctorId,
-        title: "Appointment cancelled",
-        body: `${user?.name} cancelled the ${cancelFor.date} appointment.`,
-        type: "appointment",
-      });
+      const admins = await adminRecipients();
+      await notifyMany([
+        {
+          userId: cancelFor.doctorId,
+          title: "Appointment cancelled",
+          body: `${user?.name} cancelled the ${cancelFor.date} appointment.`,
+          type: "appointment",
+          link: "/doctor/appointments",
+        },
+        ...admins.map((a) => ({
+          ...a,
+          title: "Appointment cancelled",
+          body: `${user?.name} cancelled their ${cancelFor.date} appointment with ${cancelFor.doctorName}.`,
+          type: "appointment" as const,
+          link: "/admin/appointments",
+          sendEmailToo: true,
+        })),
+      ]);
       toast.success("Appointment cancelled");
       setCancelFor(null);
       reload();
@@ -223,9 +254,18 @@ export default function PatientAppointments() {
                       <MessageSquare className="h-4 w-4" /> Message doctor
                     </Button>
                   )}
+                  {rxMap[appt.id] && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setViewing(rxMap[appt.id])}
+                    >
+                      <FileText className="h-4 w-4" /> View prescription
+                    </Button>
+                  )}
                   {canRequestMeet(appt) && (
                     <Button size="sm" onClick={() => askForMeet(appt)}>
-                      <Video className="h-4 w-4" /> Request Meet link
+                      <Video className="h-4 w-4" /> Ask doctor for Meet link
                     </Button>
                   )}
                   {appt.paymentStatus === "proof_submitted" && (
@@ -304,6 +344,12 @@ export default function PatientAppointments() {
         title="Cancel appointment?"
         message="This will release your slot so others can book it. This can't be undone."
         confirmLabel="Yes, cancel"
+      />
+
+      <PrescriptionViewer
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        rx={viewing}
       />
     </div>
   );

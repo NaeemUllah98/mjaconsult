@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, Save, Plus, Trash2, Wand2 } from "lucide-react";
+import { CalendarClock, Save, Plus, Trash2, Wand2, Globe2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAsync } from "@/hooks/useAsync";
@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/Badge";
 import { PageLoader } from "@/components/ui/Misc";
 import { WEEKDAYS, WEEKDAY_LABELS, formatTime } from "@/utils/format";
 import { generateSlots } from "@/utils/slots";
+import { browserTimeZone, listTimeZones } from "@/utils/timezone";
 import type { Doctor, TimeSlot, Weekday } from "@/types";
 
 export default function DoctorAvailability() {
@@ -38,7 +39,9 @@ function Editor({
   >(doctor?.availability ?? {});
   const [duration, setDuration] = useState(doctor?.slotDurationMins ?? 30);
   const [range, setRange] = useState({ start: "09:00", end: "17:00" });
+  const [timezone, setTimezone] = useState(doctor?.timezone || browserTimeZone());
   const [saving, setSaving] = useState(false);
+  const zones = listTimeZones();
 
   const toggleDay = (day: Weekday) =>
     setAvailability((a) => {
@@ -84,6 +87,7 @@ function Editor({
         active: doctor?.active ?? true,
         availability,
         slotDurationMins: duration,
+        timezone,
       });
       toast.success("Availability saved");
     } catch {
@@ -104,6 +108,32 @@ function Editor({
           </Button>
         }
       />
+
+      {/* Timezone */}
+      <Card className="mb-6">
+        <div className="flex items-center gap-2 text-brand-600">
+          <Globe2 className="h-5 w-5" />
+          <h3 className="font-display font-bold text-ink">Your timezone</h3>
+        </div>
+        <p className="mt-1 text-sm text-ink-muted">
+          All the times below are in this timezone. Patients anywhere in the
+          world will automatically see them converted to their own local time
+          when booking.
+        </p>
+        <div className="mt-4 max-w-sm">
+          <Select
+            label="Timezone"
+            value={timezone}
+            onChange={(e) => setTimezone(e.target.value)}
+          >
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {z.replace(/_/g, " ")}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </Card>
 
       {/* Slot generator */}
       <Card className="mb-6">

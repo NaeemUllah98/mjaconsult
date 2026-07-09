@@ -38,10 +38,10 @@ export function AdminChatMonitor() {
   const active = threads.find((t) => t.id === activeId) ?? null;
 
   return (
-    <div className="grid h-[calc(100vh-15rem)] grid-cols-1 overflow-hidden rounded-2xl border border-surface-muted bg-surface shadow-card md:grid-cols-[320px_1fr]">
+    <div className="grid h-full grid-cols-1 overflow-hidden rounded-2xl border border-surface-muted bg-surface shadow-card md:grid-cols-[320px_1fr]">
       {/* Threads list */}
-      <div className={cn("flex flex-col border-r border-surface-muted", active && "hidden md:flex")}>
-        <div className="border-b border-surface-muted p-3">
+      <div className={cn("flex min-h-0 flex-col border-r border-surface-muted", active && "hidden md:flex")}>
+        <div className="shrink-0 border-b border-surface-muted p-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-muted" />
             <input
@@ -52,7 +52,7 @@ export function AdminChatMonitor() {
             />
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
             <div className="p-4">
               <EmptyState
@@ -126,8 +126,8 @@ function Transcript({
   }, [messages]);
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between gap-3 border-b border-surface-muted px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-surface-muted px-4 py-3">
         <div className="flex items-center gap-3">
           <button onClick={onBack} className="text-sm font-medium text-brand-600 md:hidden">
             ← Back
@@ -150,7 +150,7 @@ function Transcript({
       </div>
 
       {/* Legend */}
-      <div className="flex items-center gap-4 border-b border-surface-muted bg-surface-subtle px-4 py-2 text-xs text-ink-muted">
+      <div className="flex shrink-0 items-center gap-4 border-b border-surface-muted bg-surface-subtle px-4 py-2 text-xs text-ink-muted">
         <span className="flex items-center gap-1.5">
           <span className="h-2.5 w-2.5 rounded-full bg-brand-500" />
           <Stethoscope className="h-3.5 w-3.5" /> Doctor
@@ -161,7 +161,7 @@ function Transcript({
         </span>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto bg-surface-subtle px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-surface-subtle px-4 py-4">
         {messages.map((m) => {
           const isDoctor = m.senderId === thread.doctorId;
           return (

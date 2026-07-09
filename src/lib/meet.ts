@@ -1,11 +1,13 @@
-import { listAdmins, updateAppointment } from "./api";
+import { updateAppointment } from "./api";
 import { notify } from "./notifications";
 import { formatDate, formatTime } from "@/utils/format";
 import type { Appointment } from "@/types";
 
 /**
- * A doctor or patient asks the admin to create the Google Meet link for an
- * appointment. Flags the appointment and notifies every admin.
+ * A patient nudges their doctor to send the Google Meet link for a live
+ * appointment. Flags the appointment and notifies the doctor directly —
+ * doctors create and share their own Meet links (the admin no longer sits in
+ * this path).
  */
 export async function requestMeetLink(
   appt: Appointment,
@@ -16,33 +18,27 @@ export async function requestMeetLink(
     meetRequestedByName: requesterName,
   });
 
-  const admins = await listAdmins();
-  await Promise.all(
-    admins.map((a) =>
-      notify({
-        userId: a.uid,
-        email: a.email,
-        name: a.name,
-        title: "Google Meet link requested",
-        body: `${requesterName} requested a Meet link for the ${formatDate(
-          appt.date,
-        )} at ${formatTime(appt.slot.start)} appointment (${appt.doctorName} & ${appt.patientName}).`,
-        type: "appointment",
-        link: "/admin/appointments",
-        sendEmailToo: true,
-      }),
-    ),
-  );
+  await notify({
+    userId: appt.doctorId,
+    title: "Patient is waiting for the Meet link",
+    body: `${requesterName} is ready for your ${formatDate(appt.date)} at ${formatTime(
+      appt.slot.start,
+    )} appointment. Send the Google Meet link from your Appointments page.`,
+    type: "appointment",
+    link: "/doctor/appointments",
+    sendEmailToo: false,
+  });
 }
 
 /**
- * Admin creates/pastes the Meet link and shares it. Saves it on the
- * appointment and notifies BOTH the patient and the doctor so all three
- * (admin included) can join the same call.
+ * The doctor (normally) or an admin (fallback) creates/pastes the Meet link
+ * and shares it. Saves it on the appointment and notifies the patient — and
+ * the doctor too, unless they're the one sharing it.
  */
 export async function shareMeetLink(
   appt: Appointment,
   meetLink: string,
+  sharedByDoctor = false,
 ): Promise<void> {
   await updateAppointment(appt.id, { meetLink, meetRequested: false });
 
@@ -50,7 +46,7 @@ export async function shareMeetLink(
     appt.slot.start,
   )} is ready: ${meetLink}`;
 
-  await Promise.all([
+  const notifications = [
     notify({
       userId: appt.patientId,
       email: appt.patientEmail,
@@ -60,12 +56,17 @@ export async function shareMeetLink(
       type: "appointment",
       sendEmailToo: true,
     }),
-    notify({
-      userId: appt.doctorId,
-      title: "Google Meet link shared",
-      body,
-      type: "appointment",
-      sendEmailToo: false,
-    }),
-  ]);
+  ];
+  if (!sharedByDoctor) {
+    notifications.push(
+      notify({
+        userId: appt.doctorId,
+        title: "Google Meet link shared",
+        body,
+        type: "appointment",
+        sendEmailToo: false,
+      }),
+    );
+  }
+  await Promise.all(notifications);
 }

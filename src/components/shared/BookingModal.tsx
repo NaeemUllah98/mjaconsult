@@ -26,7 +26,7 @@ import {
   getPaymentSettings,
 } from "@/lib/api";
 import { DEFAULT_PAYMENT_SETTINGS } from "@/lib/demo/seed";
-import { notify } from "@/lib/notifications";
+import { notify, notifyMany, adminRecipients } from "@/lib/notifications";
 import { computePromoFee, discountLabel } from "@/utils/appointment";
 import {
   formatCurrency,
@@ -34,6 +34,12 @@ import {
   weekdayFromISO,
   WEEKDAY_LABELS,
 } from "@/utils/format";
+import {
+  browserTimeZone,
+  zonedTimeToUtc,
+  formatTimeInZone,
+  zoneAbbreviation,
+} from "@/utils/timezone";
 import type { Doctor, Promotion, PaymentSettings, TimeSlot } from "@/types";
 
 type View = "select" | "pay-accounts" | "pay-upload" | "submitted" | "done";
@@ -67,6 +73,14 @@ export function BookingModal({
   const currency = doctor.currency ?? "USD";
   const fee = useMemo(() => computePromoFee(doctor.fees, promo), [doctor.fees, promo]);
   const isFree = fee === 0;
+
+  const doctorTz = doctor.timezone || "UTC";
+  const viewerTz = useMemo(() => browserTimeZone(), []);
+  const showLocalTime = doctorTz !== viewerTz;
+  const viewerTimeFor = (time: string) =>
+    dateISO
+      ? formatTimeInZone(zonedTimeToUtc(dateISO, time, doctorTz), viewerTz)
+      : formatTime(time);
 
   // Next 14 days as quick-pick chips.
   const days = useMemo(
@@ -131,6 +145,7 @@ export function BookingModal({
         doctorPhotoURL: doctor.photoURL,
         date: dateISO,
         slot,
+        doctorTimezone: doctorTz,
         reason,
         fee,
         isFree,
@@ -159,15 +174,45 @@ export function BookingModal({
     setApptId(id);
     onBooked?.();
 
-    notify({
-      userId: doctor.uid,
-      email: doctor.email,
-      name: doctor.name,
-      title: "New appointment booked",
-      body: `${user.name} booked ${format(new Date(dateISO), "MMM d")} at ${formatTime(slot.start)}.`,
-      type: "appointment",
-      sendEmailToo: true,
-    }).catch(() => {});
+    // Fan the new booking out to the doctor, the patient and every admin —
+    // each gets an in-app notification and (if EmailJS is configured) an email.
+    const apptLabel = `${format(new Date(dateISO), "MMM d")} at ${formatTime(slot.start)}`;
+    adminRecipients()
+      .then((admins) =>
+        notifyMany([
+          {
+            userId: doctor.uid,
+            email: doctor.email,
+            name: doctor.name,
+            title: "New appointment booked",
+            body: `${user.name} booked you for ${apptLabel}.`,
+            type: "appointment",
+            link: "/doctor/appointments",
+            sendEmailToo: true,
+          },
+          {
+            userId: user.uid,
+            email: user.email,
+            name: user.name,
+            title: isFree ? "Appointment confirmed ✅" : "Booking received",
+            body: isFree
+              ? `Your appointment with ${doctor.name} on ${apptLabel} is confirmed.`
+              : `Your booking with ${doctor.name} on ${apptLabel} is received. Please complete payment to confirm your slot.`,
+            type: "appointment",
+            link: "/patient/appointments",
+            sendEmailToo: true,
+          },
+          ...admins.map((a) => ({
+            ...a,
+            title: "New booking",
+            body: `${user.name} booked ${doctor.name} for ${apptLabel}.`,
+            type: "appointment" as const,
+            link: "/admin/appointments",
+            sendEmailToo: true,
+          })),
+        ]),
+      )
+      .catch(() => {});
 
     if (isFree) {
       setView("done");
@@ -283,9 +328,16 @@ export function BookingModal({
           {/* Step 2: slot */}
           {dateISO && slotsForDay.length > 0 && (
             <div>
-              <p className="mb-2 flex items-center gap-2 text-sm font-semibold text-ink-soft">
+              <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink-soft">
                 <Clock className="h-4 w-4 text-brand-500" /> Pick a time
               </p>
+              {showLocalTime && (
+                <p className="mb-2 text-xs text-ink-muted">
+                  Shown in {doctor.name}'s time (
+                  {zoneAbbreviation(zonedTimeToUtc(dateISO, "12:00", doctorTz), doctorTz)}) —
+                  your local time is shown underneath each slot.
+                </p>
+              )}
               {loadingSlots ? (
                 <div className="flex items-center gap-2 text-sm text-ink-muted">
                   <Loader2 className="h-4 w-4 animate-spin" /> Checking
@@ -301,7 +353,7 @@ export function BookingModal({
                         key={s.start}
                         disabled={isTaken}
                         onClick={() => setSlot(s)}
-                        className={`rounded-xl border px-2 py-2.5 text-sm font-medium transition ${
+                        className={`flex flex-col items-center rounded-xl border px-2 py-2.5 text-sm font-medium transition ${
                           selected
                             ? "border-brand-400 bg-brand-gradient text-white shadow-glow"
                             : isTaken
@@ -310,6 +362,13 @@ export function BookingModal({
                         }`}
                       >
                         {formatTime(s.start)}
+                        {showLocalTime && (
+                          <span
+                            className={`text-[11px] font-normal ${selected ? "text-white/80" : "text-ink-muted"}`}
+                          >
+                            {viewerTimeFor(s.start)} your time
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -429,6 +488,7 @@ export function BookingModal({
           doctorName={doctor.name}
           dateISO={dateISO}
           slot={slot!}
+          localTime={showLocalTime ? viewerTimeFor(slot!.start) : undefined}
           onClose={closeAll}
         />
       )}
@@ -440,11 +500,13 @@ function ConfirmedView({
   doctorName,
   dateISO,
   slot,
+  localTime,
   onClose,
 }: {
   doctorName: string;
   dateISO: string;
   slot: TimeSlot;
+  localTime?: string;
   onClose: () => void;
 }) {
   return (
@@ -457,8 +519,8 @@ function ConfirmedView({
       </h3>
       <p className="mt-2 text-ink-muted">
         Your appointment with <strong>{doctorName}</strong> on{" "}
-        {format(new Date(dateISO), "EEEE, MMM d")} at {formatTime(slot.start)} is
-        confirmed.
+        {format(new Date(dateISO), "EEEE, MMM d")} at {formatTime(slot.start)}
+        {localTime ? ` (${localTime} your time)` : ""} is confirmed.
       </p>
       <div className="mt-6 flex gap-3">
         <Button variant="outline" fullWidth onClick={onClose}>

@@ -1,5 +1,30 @@
 import { parseISO } from "date-fns";
+import { zonedTimeToUtc } from "@/utils/timezone";
 import type { Appointment, Promotion } from "@/types";
+
+/** Today's calendar date as "yyyy-MM-dd", using the viewer's local clock. */
+export function todayISO(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Whether a "yyyy-MM-dd" date is today or later (i.e. not yet past). */
+export function isUpcomingDate(dateISO: string): boolean {
+  return dateISO >= todayISO();
+}
+
+/** Whether a "yyyy-MM-dd" date is strictly before today. */
+export function isPastDate(dateISO: string): boolean {
+  return dateISO < todayISO();
+}
+
+/** Whether a "yyyy-MM-dd" date is strictly after today. */
+export function isFutureDate(dateISO: string): boolean {
+  return dateISO > todayISO();
+}
 
 /**
  * Payment is considered settled when the appointment is a free campaign,
@@ -15,15 +40,18 @@ export function isPaid(appt: Appointment): boolean {
 
 // ---- Appointment time window -------------------------------------------
 
-/** Build the real start/end Date for an appointment from its date + slot. */
+/**
+ * Build the real start/end instant for an appointment from its date + slot.
+ * The date/slot are wall-clock times in the doctor's own timezone (snapshotted
+ * on the appointment as `doctorTimezone`), so this always resolves to the same
+ * absolute instant no matter which country the doctor or patient is browsing
+ * from — critical for messaging/Meet windows to open at the same real moment
+ * for both parties.
+ */
 export function appointmentWindow(appt: Appointment): { start: Date; end: Date } {
-  const base = parseISO(appt.date);
-  const [sh, sm] = appt.slot.start.split(":").map(Number);
-  const [eh, em] = appt.slot.end.split(":").map(Number);
-  const start = new Date(base);
-  start.setHours(sh, sm, 0, 0);
-  const end = new Date(base);
-  end.setHours(eh, em, 0, 0);
+  const tz = appt.doctorTimezone || "UTC";
+  const start = zonedTimeToUtc(appt.date, appt.slot.start, tz);
+  const end = zonedTimeToUtc(appt.date, appt.slot.end, tz);
   return { start, end };
 }
 
@@ -50,8 +78,9 @@ export function appointmentEnded(
 }
 
 /**
- * A Google Meet link can be requested only while the appointment is live
- * (within its slot), settled, confirmed and doesn't already have a link.
+ * A patient can nudge their doctor for a Google Meet link only while the
+ * appointment is live, settled, confirmed and doesn't already have a link
+ * (and only once — no need to nudge again while a request is pending).
  */
 export function canRequestMeet(appt: Appointment): boolean {
   return (
@@ -59,6 +88,16 @@ export function canRequestMeet(appt: Appointment): boolean {
     !appt.meetLink &&
     !appt.meetRequested &&
     isAppointmentLive(appt)
+  );
+}
+
+/**
+ * The doctor can send the Google Meet link any time during the live,
+ * confirmed, settled appointment window, whether or not the patient asked.
+ */
+export function canShareMeet(appt: Appointment): boolean {
+  return (
+    appt.status === "confirmed" && !appt.meetLink && isAppointmentLive(appt)
   );
 }
 

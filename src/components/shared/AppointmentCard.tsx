@@ -4,6 +4,8 @@ import { Avatar } from "@/components/ui/Avatar";
 import { StatusBadge, PaymentBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatDate, formatSlot } from "@/utils/format";
+import { appointmentWindow } from "@/utils/appointment";
+import { browserTimeZone, formatTimeInZone } from "@/utils/timezone";
 import type { Appointment } from "@/types";
 
 /** Whose perspective the card is shown from (controls which name is featured). */
@@ -26,6 +28,19 @@ export function AppointmentCard({
       ? `with ${appt.doctorName}`
       : "Patient";
   const photo = showDoctor ? appt.doctorPhotoURL : undefined;
+
+  // The doctor already sees times in their own zone; everyone else may be
+  // browsing from elsewhere, so show their local equivalent alongside it.
+  const showLocalTime =
+    perspective !== "doctor" &&
+    (appt.doctorTimezone || "UTC") !== browserTimeZone();
+  const localRange = showLocalTime
+    ? (() => {
+        const { start, end } = appointmentWindow(appt);
+        const viewerTz = browserTimeZone();
+        return `${formatTimeInZone(start, viewerTz)} – ${formatTimeInZone(end, viewerTz)}`;
+      })()
+    : null;
 
   return (
     <div className="card p-5">
@@ -56,6 +71,11 @@ export function AppointmentCard({
           <Clock className="h-4 w-4 text-brand-400" />
           {formatSlot(appt.slot)}
         </div>
+        {localRange && (
+          <div className="col-span-2 text-xs text-ink-muted">
+            Your time: {localRange}
+          </div>
+        )}
       </div>
 
       {appt.reason && (

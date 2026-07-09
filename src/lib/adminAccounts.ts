@@ -43,6 +43,8 @@ export interface NewDoctorInput {
   qualifications?: string;
   experienceYears?: number;
   bio?: string;
+  /** Admin-uploaded signature stamp printed on this doctor's prescriptions. */
+  stampUrl?: string;
 }
 
 export async function createDoctorAccount(input: NewDoctorInput): Promise<void> {
@@ -64,6 +66,8 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
       currency: input.currency ?? "USD",
       availability: {},
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
+      stampUrl: input.stampUrl ?? "",
     });
     return;
   }
@@ -98,6 +102,8 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
       currency: input.currency ?? "USD",
       availability: {},
       slotDurationMins: 30,
+      timezone: "Asia/Karachi",
+      stampUrl: input.stampUrl ?? "",
       createdAt: serverTimestamp(),
     };
 

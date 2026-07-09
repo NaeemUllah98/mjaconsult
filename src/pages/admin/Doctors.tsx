@@ -9,6 +9,7 @@ import {
   Star,
   Mail,
   AlertTriangle,
+  Stamp,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -21,6 +22,7 @@ import { isDoctorOnline, isOnDutyNow } from "@/utils/presence";
 import { relativeTime } from "@/utils/format";
 import { createDoctorAccount } from "@/lib/adminAccounts";
 import { authErrorMessage } from "@/utils/authErrors";
+import { writeErrorMessage } from "@/utils/firebaseErrors";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -46,6 +48,7 @@ const empty = {
   currency: "USD",
   bio: "",
   photoURL: "",
+  stampUrl: "",
 };
 
 export default function AdminDoctors() {
@@ -99,6 +102,7 @@ export default function AdminDoctors() {
       currency: d.currency ?? "USD",
       bio: d.bio ?? "",
       photoURL: d.photoURL ?? "",
+      stampUrl: d.stampUrl ?? "",
     });
     setEditing(d);
   }
@@ -119,6 +123,7 @@ export default function AdminDoctors() {
           currency: form.currency,
           bio: form.bio,
           photoURL: form.photoURL,
+          stampUrl: form.stampUrl,
         });
         toast.success("Doctor updated");
         setEditing(null);
@@ -140,6 +145,7 @@ export default function AdminDoctors() {
           currency: form.currency,
           bio: form.bio,
           photoURL: form.photoURL,
+          stampUrl: form.stampUrl,
         });
         toast.success("Doctor account created");
         setAdding(false);
@@ -153,9 +159,14 @@ export default function AdminDoctors() {
   }
 
   async function toggleActive(d: Doctor) {
-    await setDoctorActive(d.uid, !d.active);
-    toast.success(d.active ? "Doctor deactivated" : "Doctor activated");
-    reload();
+    try {
+      await setDoctorActive(d.uid, !d.active);
+      toast.success(d.active ? "Doctor deactivated" : "Doctor activated");
+      reload();
+    } catch (err) {
+      console.error("setDoctorActive failed", err);
+      toast.error(writeErrorMessage(err, "update the doctor"));
+    }
   }
 
   async function remove() {
@@ -166,6 +177,9 @@ export default function AdminDoctors() {
       toast.success("Doctor removed");
       setRemoveTarget(null);
       reload();
+    } catch (err) {
+      console.error("deleteDoctor failed", err);
+      toast.error(writeErrorMessage(err, "remove the doctor"));
     } finally {
       setBusy(false);
     }
@@ -387,6 +401,26 @@ export default function AdminDoctors() {
             </Select>
           </div>
           <Textarea label="Bio" value={form.bio} onChange={set("bio")} />
+
+          <div className="rounded-2xl border border-surface-muted bg-surface-subtle p-4">
+            <div className="flex items-center gap-2">
+              <Stamp className="h-4 w-4 text-brand-500" />
+              <h4 className="text-sm font-bold text-ink">Signature stamp</h4>
+            </div>
+            <p className="mt-1 text-xs text-ink-muted">
+              This doctor's personal stamp/signature. It's printed on the
+              bottom-right of every prescription they issue (next to the company
+              seal). Upload a transparent PNG for the cleanest result.
+            </p>
+            <div className="mt-3">
+              <ImageUploader
+                value={form.stampUrl}
+                onUploaded={(url) => setForm((f) => ({ ...f, stampUrl: url }))}
+                folder="stamps"
+                hint="Signature / stamp image — PNG with transparency works best"
+              />
+            </div>
+          </div>
         </div>
       </Modal>
 

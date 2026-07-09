@@ -1,24 +1,40 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   CalendarCheck,
   Video,
   CheckCircle2,
   MessageSquare,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/context/AuthContext";
 import { useAsync } from "@/hooks/useAsync";
-import { listAppointmentsFor, updateAppointment } from "@/lib/api";
+import {
+  listAppointmentsFor,
+  updateAppointment,
+  getDoctor,
+  getSiteSettings,
+  listPrescriptionsFor,
+} from "@/lib/api";
 import { ensureThread } from "@/lib/chat";
-import { requestMeetLink } from "@/lib/meet";
-import { isPaid, canRequestMeet, canMessage } from "@/utils/appointment";
+import { shareMeetLink } from "@/lib/meet";
+import {
+  isPaid,
+  canShareMeet,
+  canMessage,
+  isUpcomingDate,
+  isPastDate,
+  isFutureDate,
+} from "@/utils/appointment";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AppointmentCard } from "@/components/shared/AppointmentCard";
+import { PrescriptionEditor } from "@/components/shared/PrescriptionEditor";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Input } from "@/components/ui/Input";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
-import { parseISO, isAfter, startOfToday } from "date-fns";
-import type { Appointment } from "@/types";
+import type { Appointment, Prescription } from "@/types";
 
 type Tab = "upcoming" | "past" | "all";
 
@@ -29,20 +45,36 @@ export default function DoctorAppointments() {
     () => listAppointmentsFor("doctorId", user!.uid),
     [user?.uid],
   );
+  const { data: doctorRec } = useAsync(() => getDoctor(user!.uid), [user?.uid]);
+  const { data: site } = useAsync(() => getSiteSettings(), []);
   const [tab, setTab] = useState<Tab>("upcoming");
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  // Prescriptions this doctor has issued, keyed by appointment id.
+  const [rxMap, setRxMap] = useState<Record<string, Prescription>>({});
+  useEffect(() => {
+    if (!user?.uid) return;
+    listPrescriptionsFor("doctorId", user.uid).then((list) => {
+      const m: Record<string, Prescription> = {};
+      list.forEach((p) => (m[p.appointmentId] = p));
+      setRxMap(m);
+    });
+  }, [user?.uid]);
+  const [editorFor, setEditorFor] = useState<Appointment | null>(null);
+  const [meetFor, setMeetFor] = useState<Appointment | null>(null);
+  const [meetUrl, setMeetUrl] = useState("");
+  const [sharingMeet, setSharingMeet] = useState(false);
+
   const filtered = useMemo(() => {
     const appts = data ?? [];
-    const today = startOfToday();
     switch (tab) {
       case "upcoming":
         return appts.filter(
-          (a) => a.status === "confirmed" && isAfter(parseISO(a.date), today),
+          (a) => a.status === "confirmed" && isUpcomingDate(a.date),
         );
       case "past":
         return appts.filter(
-          (a) => a.status === "completed" || !isAfter(parseISO(a.date), today),
+          (a) => a.status === "completed" || isPastDate(a.date),
         );
       default:
         return appts;
@@ -60,16 +92,19 @@ export default function DoctorAppointments() {
     }
   }
 
-  async function askForMeet(a: Appointment) {
-    setBusyId(a.id);
+  async function sendMeetLink() {
+    if (!meetFor || !meetUrl.startsWith("http")) return;
+    setSharingMeet(true);
     try {
-      await requestMeetLink(a, user!.name);
-      toast.success("Meet link requested — the admin will create & share it");
+      await shareMeetLink(meetFor, meetUrl.trim(), true);
+      toast.success("Meet link sent to your patient");
+      setMeetFor(null);
+      setMeetUrl("");
       reload();
     } catch {
-      toast.error("Could not send request. Please try again.");
+      toast.error("Could not share the link. Try again.");
     } finally {
-      setBusyId(null);
+      setSharingMeet(false);
     }
   }
 
@@ -139,14 +174,32 @@ export default function DoctorAppointments() {
                       <MessageSquare className="h-4 w-4" /> Message patient
                     </Button>
                   )}
-                  {canRequestMeet(a) && (
+                  {(a.status === "confirmed" || a.status === "completed") && (
                     <Button
                       size="sm"
-                      loading={busyId === a.id}
-                      onClick={() => askForMeet(a)}
+                      variant={rxMap[a.id] ? "outline" : "secondary"}
+                      onClick={() => setEditorFor(a)}
                     >
-                      <Video className="h-4 w-4" /> Request Meet link
+                      <FileText className="h-4 w-4" />
+                      {rxMap[a.id] ? "Edit prescription" : "Write prescription"}
                     </Button>
+                  )}
+                  {canShareMeet(a) && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setMeetFor(a);
+                        setMeetUrl("");
+                      }}
+                    >
+                      <Video className="h-4 w-4" /> Send Meet link
+                    </Button>
+                  )}
+                  {a.meetRequested && !a.meetLink && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+                      <Video className="h-3.5 w-3.5" /> Patient is waiting for
+                      the link
+                    </span>
                   )}
                   {a.paymentStatus === "proof_submitted" && (
                     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-600">
@@ -161,7 +214,7 @@ export default function DoctorAppointments() {
                     </span>
                   )}
                   {a.status === "confirmed" &&
-                    !isAfter(parseISO(a.date), startOfToday()) && (
+                    !isFutureDate(a.date) && (
                       <Button
                         size="sm"
                         variant="ghost"
@@ -177,6 +230,65 @@ export default function DoctorAppointments() {
           ))}
         </div>
       )}
+
+      {editorFor && (
+        <PrescriptionEditor
+          open={!!editorFor}
+          onClose={() => setEditorFor(null)}
+          appointment={editorFor}
+          doctorStampUrl={doctorRec?.stampUrl}
+          companyStampUrl={site?.companyStampUrl}
+          existing={rxMap[editorFor.id] ?? null}
+          onSaved={(rx) =>
+            setRxMap((m) => ({ ...m, [rx.appointmentId]: rx }))
+          }
+        />
+      )}
+
+      {/* Send Google Meet link */}
+      <Modal
+        open={!!meetFor}
+        onClose={() => setMeetFor(null)}
+        title="Send Google Meet link"
+        description={
+          meetFor
+            ? `Create a meeting for your consultation with ${meetFor.patientName} and share the link.`
+            : undefined
+        }
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setMeetFor(null)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={sendMeetLink}
+              disabled={!meetUrl.startsWith("http")}
+              loading={sharingMeet}
+            >
+              Send to patient
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <a href="https://meet.google.com/new" target="_blank" rel="noreferrer">
+            <Button variant="subtle" fullWidth>
+              <Video className="h-4 w-4" /> Open meet.google.com/new to create a link
+            </Button>
+          </a>
+          <Input
+            label="Paste the Google Meet link"
+            placeholder="https://meet.google.com/abc-defg-hij"
+            value={meetUrl}
+            onChange={(e) => setMeetUrl(e.target.value)}
+            icon={<Video className="h-4 w-4" />}
+          />
+          <p className="text-xs text-ink-muted">
+            Create the meeting in your Google account, then paste the link
+            here. Your patient will be notified immediately.
+          </p>
+        </div>
+      </Modal>
     </div>
   );
 }

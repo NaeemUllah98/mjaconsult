@@ -120,18 +120,18 @@ export function ChatPanel({
   }
 
   return (
-    <div className="grid h-[calc(100vh-12rem)] grid-cols-1 overflow-hidden rounded-2xl border border-surface-muted bg-surface shadow-card md:grid-cols-[300px_1fr]">
+    <div className="grid h-full grid-cols-1 overflow-hidden rounded-2xl border border-surface-muted bg-surface shadow-card md:grid-cols-[300px_1fr]">
       {/* Threads list */}
       <div
         className={cn(
-          "flex flex-col border-r border-surface-muted",
+          "flex min-h-0 flex-col border-r border-surface-muted",
           active && "hidden md:flex",
         )}
       >
-        <div className="border-b border-surface-muted px-4 py-3.5">
+        <div className="shrink-0 border-b border-surface-muted px-4 py-3.5">
           <h2 className="font-display font-bold text-ink">Conversations</h2>
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {threads.length === 0 ? (
             <div className="p-4">
               <EmptyState
@@ -275,8 +275,8 @@ function Conversation({
   }
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center gap-3 border-b border-surface-muted px-4 py-3">
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex shrink-0 items-center gap-3 border-b border-surface-muted px-4 py-3">
         <button
           onClick={onBack}
           className="text-sm font-medium text-brand-600 md:hidden"
@@ -295,7 +295,7 @@ function Conversation({
         )}
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto bg-surface-subtle px-4 py-4">
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto bg-surface-subtle px-4 py-4">
         {messages.map((m) => {
           const mine = m.senderId === userId;
           return (

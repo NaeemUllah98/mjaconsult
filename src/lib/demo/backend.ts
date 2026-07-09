@@ -12,6 +12,7 @@ import type {
   Doctor,
   Appointment,
   Promotion,
+  Prescription,
   ChatThread,
   ChatMessage,
   AppNotification,
@@ -31,7 +32,7 @@ export interface MessageAttachment {
 /** DEMO mode is active whenever Firebase keys are absent. */
 export const DEMO = !isFirebaseConfigured;
 
-const STORAGE_KEY = "mjaconsult_demo_db_v3";
+const STORAGE_KEY = "mjaconsult_demo_db_v4";
 
 // ---- persistence --------------------------------------------------------
 
@@ -47,6 +48,7 @@ function reviveDates(db: DemoDB): DemoDB {
   db.doctors.forEach(fix);
   db.appointments.forEach(fix);
   db.promotions.forEach(fix);
+  db.prescriptions?.forEach(fix);
   db.chats.forEach(fix);
   db.notifications.forEach(fix);
   Object.values(db.messages).forEach((arr) => arr.forEach(fix));
@@ -123,6 +125,7 @@ export function demoLogin(email: string, password: string): AppUser {
   const expected =
     db.passwordOverrides?.[user.uid] ?? DEMO_PASSWORDS[user.uid] ?? "patient123";
   if (password !== expected) throw { code: "auth/wrong-password" };
+  if (user.active === false) throw { code: "auth/user-disabled" };
   db.currentUid = user.uid;
   save();
   return clone(user);
@@ -141,6 +144,7 @@ export function demoSetPassword(email: string, password: string) {
 export function demoLoginAs(uid: string): AppUser {
   const user = db.users.find((u) => u.uid === uid);
   if (!user) throw { code: "auth/user-not-found" };
+  if (user.active === false) throw { code: "auth/user-disabled" };
   db.currentUid = uid;
   save();
   return clone(user);
@@ -192,11 +196,6 @@ export function demoListPatients(): AppUser[] {
 
 export function demoListAdmins(): AppUser[] {
   return clone(db.users.filter((u) => u.role === "admin"));
-}
-
-export function demoDeleteUser(uid: string) {
-  db.users = db.users.filter((u) => u.uid !== uid);
-  save();
 }
 
 // ---- doctors ------------------------------------------------------------
@@ -361,6 +360,43 @@ export function demoUpdatePromotion(id: string, patch: Partial<Promotion>) {
 export function demoDeletePromotion(id: string) {
   db.promotions = db.promotions.filter((p) => p.id !== id);
   save();
+}
+
+// ---- prescriptions ------------------------------------------------------
+
+export function demoGetPrescription(id: string): Prescription | null {
+  return clone(db.prescriptions.find((p) => p.id === id) ?? null);
+}
+
+export function demoGetPrescriptionForAppointment(
+  appointmentId: string,
+): Prescription | null {
+  return clone(
+    db.prescriptions.find((p) => p.appointmentId === appointmentId) ?? null,
+  );
+}
+
+export function demoSavePrescription(p: Prescription) {
+  const i = db.prescriptions.findIndex((x) => x.id === p.id);
+  if (i >= 0)
+    db.prescriptions[i] = { ...db.prescriptions[i], ...p, updatedAt: new Date() };
+  else db.prescriptions.push({ ...p, createdAt: new Date(), updatedAt: new Date() });
+  save();
+}
+
+export function demoListPrescriptionsFor(
+  field: "patientId" | "doctorId",
+  id: string,
+): Prescription[] {
+  return clone(
+    db.prescriptions
+      .filter((p) => p[field] === id)
+      .sort((a, b) => b.date.localeCompare(a.date)),
+  );
+}
+
+export function demoListAllPrescriptions(): Prescription[] {
+  return clone([...db.prescriptions].sort((a, b) => b.date.localeCompare(a.date)));
 }
 
 // ---- chat ---------------------------------------------------------------

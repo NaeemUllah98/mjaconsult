@@ -13,8 +13,10 @@ import {
   sendPasswordResetEmail,
   updateProfile,
   onAuthStateChanged,
+  getAdditionalUserInfo,
   type User as FirebaseUser,
 } from "firebase/auth";
+import toast from "react-hot-toast";
 import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
 import { getUser, upsertUser } from "@/lib/api";
 import * as demo from "@/lib/demo/backend";
@@ -47,14 +49,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function hydrate(fb: FirebaseUser | null): Promise<AppUser | null> {
+  async function hydrate(
+    fb: FirebaseUser | null,
+    opts: { allowCreate?: boolean } = {},
+  ): Promise<AppUser | null> {
     if (!fb) {
       setUser(null);
       return null;
     }
     let profile = await getUser(fb.uid);
     if (!profile) {
-      // First sign-in (e.g. Google) — create a base patient record,
+      if (!opts.allowCreate) {
+        // This Firebase Auth account has no matching Firestore profile —
+        // almost always because an admin removed the record. Firebase's free
+        // (Spark) plan gives the client no way to delete another user's Auth
+        // account directly, so removal is enforced here instead: without a
+        // profile (or with one marked inactive, below) the account is signed
+        // back out on every login/refresh rather than silently re-created.
+        await fbSignOut(auth);
+        setUser(null);
+        throw new Error(
+          "This account is no longer registered. Please contact support.",
+        );
+      }
+      // Genuine first sign-in (e.g. Google) — create a base patient record,
       // unless the email is the configured bootstrap admin.
       const role: Role =
         fb.email?.toLowerCase() === ADMIN_EMAIL ? "admin" : "patient";
@@ -68,20 +86,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       };
       await upsertUser(profile);
     }
+    if (profile.active === false) {
+      await fbSignOut(auth);
+      setUser(null);
+      throw new Error(
+        "Your account has been disabled. Please contact support.",
+      );
+    }
     setUser(profile);
     return profile;
   }
 
   useEffect(() => {
     if (!isFirebaseConfigured) {
-      // DEMO mode: restore the previously "signed-in" demo user, if any.
-      setUser(demo.demoCurrentUser());
+      // DEMO mode: restore the previously "signed-in" demo user, if any —
+      // unless an admin disabled them since the session was saved.
+      const current = demo.demoCurrentUser();
+      if (current?.active === false) {
+        demo.demoSignOut();
+        setUser(null);
+        toast.error("Your account has been disabled. Please contact support.");
+      } else {
+        setUser(current);
+      }
       setLoading(false);
       return;
     }
     const unsub = onAuthStateChanged(auth, async (fb) => {
       setFirebaseUser(fb);
-      await hydrate(fb);
+      try {
+        await hydrate(fb);
+      } catch (err) {
+        if (fb) toast.error((err as Error).message);
+      }
       setLoading(false);
     });
     return unsub;
@@ -129,7 +166,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return u;
     }
     const cred = await signInWithPopup(auth, googleProvider);
-    return (await hydrate(cred.user))!;
+    // Only auto-provision a profile for a genuinely brand-new Google
+    // sign-up. A returning Google user with no profile means an admin
+    // removed their record — they must not be silently re-created.
+    const isNewUser = getAdditionalUserInfo(cred)?.isNewUser ?? false;
+    return (await hydrate(cred.user, { allowCreate: isNewUser }))!;
   };
 
   const resetPassword = async (email: string) => {

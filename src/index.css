@@ -100,3 +100,298 @@
     scrollbar-width: none;
   }
 }
+
+/* ============================================================
+   Prescription document — MJACONSULT letterhead (210×297mm,
+   full A4 portrait). Sizes use container-query units (cqw) so
+   the whole document scales crisply at any width, including print.
+   ============================================================ */
+.rx-doc {
+  container-type: inline-size;
+  position: relative;
+  width: 100%;
+  aspect-ratio: 210 / 297;
+  background: #ffffff;
+  color: #0f2230;
+  overflow: hidden;
+  border: 1px solid #e4edf0;
+  font-family: "Inter", system-ui, sans-serif;
+}
+.rx-doc * {
+  box-sizing: border-box;
+}
+.rx-doc-inner {
+  position: absolute;
+  inset: 0;
+  padding: 6cqw 7cqw 5cqw;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.rx-head {
+  display: flex;
+  align-items: center;
+  gap: 2cqw;
+}
+.rx-head-logo {
+  height: 8.4cqw;
+  width: auto;
+  object-fit: contain;
+}
+.rx-head-brand {
+  line-height: 1.05;
+}
+.rx-head-name {
+  font-family: "Plus Jakarta Sans", "Inter", sans-serif;
+  font-weight: 800;
+  font-size: 4.2cqw;
+  letter-spacing: -0.02em;
+  color: #0d3b54;
+}
+.rx-head-name b {
+  color: #2a9d8f;
+  font-weight: 800;
+}
+.rx-head-sub {
+  margin-top: 0.4cqw;
+  font-size: 1.38cqw;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  color: #6b7c89;
+}
+.rx-rule {
+  margin-top: 1.9cqw;
+  height: 0;
+  border-top: 0.38cqw solid #1b4f6c;
+  border-radius: 1cqw;
+}
+
+/* Patient meta (Date / Name / Age / Sex) */
+.rx-meta {
+  margin-top: 2.1cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 1.7cqw;
+}
+.rx-meta-row {
+  display: flex;
+  gap: 3cqw;
+}
+.rx-field {
+  display: flex;
+  align-items: baseline;
+  font-size: 2.35cqw;
+  color: #3a4a57;
+  min-width: 0;
+}
+.rx-field.grow {
+  flex: 1;
+}
+.rx-field-l {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.rx-field-v {
+  flex: 1;
+  margin-left: 1cqw;
+  min-width: 0;
+  color: #0d3b54;
+  font-weight: 700;
+  border-bottom: 0.18cqw dashed #aebfc9;
+  padding: 0 0.6cqw 0.4cqw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Body — full-width clinical content. The ℞ mark sits top-left; the signature
+   block is pushed to the bottom of the page (margin-top:auto on .rx-sign). */
+.rx-body {
+  position: relative;
+  margin-top: 2.6cqw;
+  flex: 1;
+  min-height: 0;
+  padding-left: 9cqw;
+  display: flex;
+  flex-direction: column;
+  gap: 2.4cqw;
+  overflow: hidden;
+}
+.rx-rx-mark {
+  position: absolute;
+  top: -0.5cqw;
+  left: 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 7cqw;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 0.8;
+  color: #1b4f6c;
+}
+.rx-sec-title {
+  font-size: 2.05cqw;
+  font-weight: 800;
+  color: #236485;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 0.6cqw;
+}
+.rx-sec-text {
+  font-size: 2.5cqw;
+  color: #0f2230;
+  line-height: 1.4;
+}
+.rx-meds {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.2cqw;
+}
+.rx-med {
+  font-size: 2.45cqw;
+  line-height: 1.35;
+  display: flex;
+  gap: 1.2cqw;
+}
+.rx-med-no {
+  color: #6b7c89;
+  font-weight: 700;
+}
+.rx-med-name {
+  font-weight: 700;
+  color: #0d3b54;
+}
+.rx-med-sub {
+  color: #3a4a57;
+}
+.rx-empty {
+  font-size: 2.45cqw;
+  color: #9fb3bf;
+  font-style: italic;
+}
+
+/* Signature block — the issuing doctor's stamp (left) and the universal
+   company seal (right), spaced apart with space-between so they never
+   overlap. Pinned near the page bottom via margin-top:auto. */
+.rx-sign {
+  margin-top: auto;
+  padding-top: 4cqw;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8cqw;
+}
+.rx-sign-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 0;
+}
+.rx-sign-stamp {
+  max-width: 36cqw;
+  max-height: 22cqw;
+  object-fit: contain;
+}
+.rx-seal {
+  max-width: 26cqw;
+  max-height: 22cqw;
+  object-fit: contain;
+}
+.rx-sign-line {
+  margin-top: 1cqw;
+  width: 36cqw;
+  border-top: 0.3cqw solid #1b4f6c;
+}
+.rx-sign-name {
+  margin-top: 0.9cqw;
+  font-size: 2.2cqw;
+  font-weight: 800;
+  color: #0d3b54;
+}
+.rx-sign-role {
+  font-size: 1.8cqw;
+  color: #6b7c89;
+}
+.rx-sign-cap {
+  margin-top: 1cqw;
+  font-size: 1.7cqw;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: #6b7c89;
+}
+
+/* Footer rule — sits in normal flow at the bottom of the page. */
+.rx-foot {
+  margin-top: 3cqw;
+}
+.rx-foot-line {
+  height: 0;
+  border-top: 0.3cqw solid #2a9d8f;
+  border-radius: 1cqw;
+}
+.rx-foot-row {
+  margin-top: 1cqw;
+  display: flex;
+  justify-content: space-between;
+  font-size: 1.55cqw;
+  font-weight: 500;
+  color: #6b7c89;
+}
+
+/* The print target is a portal mounted directly on <body> (so no transformed
+   ancestor breaks position:fixed). It's clipped to 0×0 on screen and only
+   expanded to a full page while printing. */
+.rx-print-area {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Print: isolate the prescription and force exact full A4 page size. */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  body.rx-printing > * {
+    visibility: hidden !important;
+  }
+  body.rx-printing .rx-print-area,
+  body.rx-printing .rx-print-area * {
+    visibility: visible !important;
+  }
+  body.rx-printing .rx-print-area {
+    position: fixed !important;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    height: 297mm;
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+    z-index: 99999;
+    background: #fff;
+  }
+  body.rx-printing .rx-print-area .rx-doc {
+    width: 210mm !important;
+    height: 297mm !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}

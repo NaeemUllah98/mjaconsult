@@ -64,6 +64,17 @@ export interface Doctor extends AppUser {
   availability: Partial<Record<Weekday, TimeSlot[]>>;
   /** Minutes per consultation, used to render slots. */
   slotDurationMins?: number;
+  /**
+   * IANA timezone (e.g. "Asia/Karachi") that the doctor's availability slots
+   * are defined in. Used to convert bookable times correctly for patients
+   * anywhere in the world. Defaults to the browser's timezone if unset.
+   */
+  timezone?: string;
+  /**
+   * The doctor's personal signature/stamp image (uploaded & managed by the
+   * admin). Stamped on the bottom-right of prescriptions this doctor issues.
+   */
+  stampUrl?: string;
 }
 
 /** Patient profile extras in `patients/{uid}` (optional, base is `users`). */
@@ -86,9 +97,15 @@ export interface Appointment {
   doctorName: string;
   doctorSpecialization?: string;
   doctorPhotoURL?: string;
-  /** ISO date string "YYYY-MM-DD". */
+  /** ISO date string "YYYY-MM-DD", interpreted in `doctorTimezone`. */
   date: string;
   slot: TimeSlot;
+  /**
+   * Snapshot of the doctor's IANA timezone at booking time — `date` + `slot`
+   * are wall-clock times in this zone. Falls back to "UTC" if absent (older
+   * appointments booked before timezone tracking was added).
+   */
+  doctorTimezone?: string;
   status: AppointmentStatus;
   reason?: string;
   fee: number;
@@ -175,6 +192,57 @@ export interface PaymentSettings {
 export interface SiteSettings {
   /** Which doctor is promoted on the public landing page (empty = auto). */
   featuredDoctorId?: string;
+  /**
+   * The universal company seal/stamp (uploaded by the admin) printed on every
+   * prescription, alongside the issuing doctor's personal stamp.
+   */
+  companyStampUrl?: string;
+}
+
+/** A single medicine line on a prescription. */
+export interface PrescriptionMedicine {
+  /** e.g. "Tab. Aspirin 75mg". */
+  name: string;
+  /** e.g. "1 tablet". */
+  dosage?: string;
+  /** e.g. "Once daily" / "1 + 0 + 1". */
+  frequency?: string;
+  /** e.g. "30 days". */
+  duration?: string;
+  /** e.g. "After meals". */
+  notes?: string;
+}
+
+/**
+ * A prescription a doctor issues to a patient, rendered as the MJACONSULT
+ * letterhead (210×150mm, half-A4). Stored in `prescriptions/{appointmentId}`
+ * (one per appointment). The doctor + company stamps are snapshotted onto the
+ * document at issue time so it stays stable even if the admin later changes a
+ * stamp.
+ */
+export interface Prescription {
+  id: string;
+  appointmentId: string;
+  doctorId: string;
+  doctorName: string;
+  doctorSpecialization?: string;
+  patientId: string;
+  patientName: string;
+  patientAge?: string;
+  patientSex?: "male" | "female" | "other" | "";
+  /** ISO date the prescription was issued ("YYYY-MM-DD"). */
+  date: string;
+  diagnosis?: string;
+  medicines: PrescriptionMedicine[];
+  advice?: string;
+  /** Optional follow-up date (ISO). */
+  followUpDate?: string;
+  /** Snapshot of the issuing doctor's stamp (admin-managed). */
+  doctorStampUrl?: string;
+  /** Snapshot of the universal company seal (admin-managed). */
+  companyStampUrl?: string;
+  createdAt?: FireDate;
+  updatedAt?: FireDate;
 }
 
 export type BannerMediaType = "image" | "video";

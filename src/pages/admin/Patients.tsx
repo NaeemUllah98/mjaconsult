@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { Search, Users, Trash2, Mail, Phone, KeyRound } from "lucide-react";
+import { Search, Users, Power, Mail, Phone, KeyRound, Pencil } from "lucide-react";
 import toast from "react-hot-toast";
 import { DEMO } from "@/lib/demo/backend";
 import { useAsync } from "@/hooks/useAsync";
-import { listPatients, deleteUserRecord, resetPatientPassword } from "@/lib/api";
+import { listPatients, resetPatientPassword, updateUser } from "@/lib/api";
+import { writeErrorMessage } from "@/utils/firebaseErrors";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
@@ -24,6 +25,34 @@ export default function AdminPatients() {
   const [newPw, setNewPw] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<AppUser | null>(null);
+  const [editForm, setEditForm] = useState({ name: "", phone: "" });
+  const [saving, setSaving] = useState(false);
+
+  function openEdit(p: AppUser) {
+    setEditForm({ name: p.name, phone: p.phone ?? "" });
+    setEditing(p);
+  }
+
+  async function saveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editing) return;
+    setSaving(true);
+    try {
+      await updateUser(editing.uid, {
+        name: editForm.name,
+        phone: editForm.phone,
+      });
+      toast.success("Patient updated");
+      setEditing(null);
+      reload();
+    } catch (err) {
+      console.error("updateUser failed", err);
+      toast.error(writeErrorMessage(err, "update the patient"));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function submitPasswordReset() {
     if (!pwTarget) return;
@@ -44,8 +73,9 @@ export default function AdminPatients() {
       );
       setPwTarget(null);
       setNewPw("");
-    } catch {
-      toast.error("Could not reset the password. Please try again.");
+    } catch (err) {
+      console.error("resetPatientPassword failed", err);
+      toast.error(writeErrorMessage(err, "reset the password"));
     } finally {
       setPwBusy(false);
     }
@@ -61,17 +91,42 @@ export default function AdminPatients() {
     [data, q],
   );
 
+  // Firebase's free (Spark) plan gives the client no way to delete another
+  // user's Auth account directly, so access is revoked by disabling the
+  // profile record instead of erasing it outright — the login flow
+  // (AuthContext) signs a disabled account back out on every attempt, which
+  // reliably blocks them going forward while keeping their appointment and
+  // prescription history intact.
   async function remove() {
     if (!removeTarget) return;
     setBusy(true);
     try {
-      await deleteUserRecord(removeTarget.uid);
-      toast.success("Patient record removed");
+      await updateUser(removeTarget.uid, { active: false });
+      toast.success(`${removeTarget.name}'s access has been revoked`);
       setRemoveTarget(null);
       reload();
+    } catch (err) {
+      console.error("revoke patient access failed", err);
+      toast.error(writeErrorMessage(err, "remove the patient"));
     } finally {
       setBusy(false);
     }
+  }
+
+  async function restore(p: AppUser) {
+    try {
+      await updateUser(p.uid, { active: true });
+      toast.success(`${p.name}'s access restored`);
+      reload();
+    } catch (err) {
+      console.error("restore patient access failed", err);
+      toast.error(writeErrorMessage(err, "restore the patient"));
+    }
+  }
+
+  function toggleActive(p: AppUser) {
+    if (p.active) setRemoveTarget(p);
+    else restore(p);
   }
 
   if (loading) return <PageLoader />;
@@ -146,6 +201,13 @@ export default function AdminPatients() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        onClick={() => openEdit(p)}
+                      >
+                        <Pencil className="h-4 w-4" /> Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
                         className="text-brand-600 hover:bg-brand-50"
                         onClick={() => {
                           setPwTarget(p);
@@ -157,10 +219,15 @@ export default function AdminPatients() {
                       <Button
                         size="sm"
                         variant="ghost"
-                        className="text-rose-500 hover:bg-rose-50"
-                        onClick={() => setRemoveTarget(p)}
+                        title={p.active ? "Revoke access" : "Restore access"}
+                        className={
+                          p.active
+                            ? "text-rose-500 hover:bg-rose-50"
+                            : "text-emerald-600 hover:bg-emerald-50"
+                        }
+                        onClick={() => toggleActive(p)}
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Power className="h-4 w-4" />
                       </Button>
                     </td>
                   </tr>
@@ -178,6 +245,9 @@ export default function AdminPatients() {
                   <p className="truncate font-semibold text-ink">{p.name}</p>
                   <p className="truncate text-xs text-ink-muted">{p.email}</p>
                 </div>
+                <Button size="sm" variant="ghost" onClick={() => openEdit(p)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -192,10 +262,11 @@ export default function AdminPatients() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="text-rose-500"
-                  onClick={() => setRemoveTarget(p)}
+                  title={p.active ? "Revoke access" : "Restore access"}
+                  className={p.active ? "text-rose-500" : "text-emerald-600"}
+                  onClick={() => toggleActive(p)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Power className="h-4 w-4" />
                 </Button>
               </div>
             ))}
@@ -250,14 +321,51 @@ export default function AdminPatients() {
         )}
       </Modal>
 
+      <Modal
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        title="Edit patient"
+        description={editing ? `Update ${editing.name}'s contact details.` : undefined}
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setEditing(null)}>
+              Cancel
+            </Button>
+            <Button onClick={saveEdit} loading={saving}>
+              Save changes
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <Input
+            label="Full name"
+            value={editForm.name}
+            onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+            required
+          />
+          <Input
+            label="Email"
+            value={editing?.email ?? ""}
+            disabled
+            hint="Email can't be changed"
+          />
+          <Input
+            label="Phone"
+            value={editForm.phone}
+            onChange={(e) => setEditForm((f) => ({ ...f, phone: e.target.value }))}
+          />
+        </div>
+      </Modal>
+
       <ConfirmDialog
         open={!!removeTarget}
         onClose={() => setRemoveTarget(null)}
         onConfirm={remove}
         loading={busy}
-        title="Remove patient?"
-        message={`This deletes ${removeTarget?.name}'s profile record. Their Firebase Auth login should be removed from the console too.`}
-        confirmLabel="Remove"
+        title="Revoke patient access?"
+        message={`This immediately signs ${removeTarget?.name} out and blocks them from logging back in. Their appointment history and prescriptions are kept, and you can restore access at any time.`}
+        confirmLabel="Revoke access"
       />
     </div>
   );

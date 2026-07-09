@@ -11,6 +11,7 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import * as demo from "./demo/backend";
+import { listAdmins } from "./api";
 import type { AppNotification } from "@/types";
 
 /**
@@ -155,5 +156,35 @@ export async function notify(args: NotifyArgs): Promise<void> {
       subject: args.title,
       message: args.body,
     });
+  }
+}
+
+/**
+ * Fan a single event out to several recipients at once (in-app + optional
+ * email). Each delivery is best-effort: one failing recipient never blocks the
+ * others, and the whole call never throws (so it can't break the UI flow).
+ */
+export async function notifyMany(items: NotifyArgs[]): Promise<void> {
+  await Promise.all(items.map((i) => notify(i).catch(() => {})));
+}
+
+/** Notification target — the minimal shape `notifyMany` needs per recipient. */
+export interface Recipient {
+  userId: string;
+  email?: string;
+  name?: string;
+}
+
+/**
+ * Every admin as a notification recipient, so key events (new bookings,
+ * payments, cancellations…) can be emailed to the whole admin team. Resolves
+ * to an empty list on failure so callers can always spread it safely.
+ */
+export async function adminRecipients(): Promise<Recipient[]> {
+  try {
+    const admins = await listAdmins();
+    return admins.map((a) => ({ userId: a.uid, email: a.email, name: a.name }));
+  } catch {
+    return [];
   }
 }

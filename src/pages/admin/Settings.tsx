@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Save, Landmark, Megaphone, Star } from "lucide-react";
+import { Save, Landmark, Megaphone, Star, Stamp } from "lucide-react";
 import toast from "react-hot-toast";
 import {
   getPaymentSettings,
@@ -13,6 +13,7 @@ import { PaymentInfo } from "@/components/shared/PaymentInfo";
 import { Card } from "@/components/ui/Card";
 import { Input, Textarea, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { ImageUploader } from "@/components/ui/ImageUploader";
 import { PageLoader } from "@/components/ui/Misc";
 import { formatCurrency } from "@/utils/format";
 import type {
@@ -144,6 +145,45 @@ export default function AdminSettings() {
               </div>
             </div>
           )}
+        </div>
+      </Card>
+
+      {/* Company prescription seal */}
+      <Card className="mb-6">
+        <div className="flex items-center gap-2">
+          <Stamp className="h-5 w-5 text-brand-500" />
+          <h3 className="font-display font-bold text-ink">
+            Company prescription seal
+          </h3>
+        </div>
+        <p className="mt-1 text-sm text-ink-muted">
+          The official MJACONSULT seal printed on every prescription, beside the
+          issuing doctor's own signature stamp. This one stamp is shared by all
+          doctors. Upload a transparent PNG for the cleanest result.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 sm:items-center">
+          <ImageUploader
+            value={site.companyStampUrl}
+            onUploaded={(url) =>
+              setSite((s) => (s ? { ...s, companyStampUrl: url } : s))
+            }
+            folder="stamps"
+            hint="Round company seal — PNG with transparency works best"
+          />
+          <div className="flex flex-col items-center gap-2 rounded-2xl bg-surface-subtle p-4">
+            {site.companyStampUrl ? (
+              <img
+                src={site.companyStampUrl}
+                alt="Company seal preview"
+                className="h-28 w-28 object-contain"
+              />
+            ) : (
+              <div className="grid h-28 w-28 place-items-center rounded-full border-2 border-dashed border-surface-muted text-ink-muted">
+                <Stamp className="h-7 w-7" />
+              </div>
+            )}
+            <span className="text-xs text-ink-muted">Seal preview</span>
+          </div>
         </div>
       </Card>
 

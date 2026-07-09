@@ -6,6 +6,7 @@ import { DEMO, demoLoginAs } from "@/lib/demo/backend";
 import { DEMO_CREDENTIALS } from "@/lib/demo/seed";
 import { useAuth } from "@/context/AuthContext";
 import { homeForRole } from "@/routes/guards";
+import { authErrorMessage } from "@/utils/authErrors";
 
 const icons = {
   Admin: <Shield className="h-4 w-4" />,
@@ -31,6 +32,8 @@ export function DemoQuickLogin() {
       await refreshUser();
       toast.success(`Signed in as ${role}`);
       navigate(homeForRole[u.role]);
+    } catch (err) {
+      toast.error(authErrorMessage(err));
     } finally {
       setBusy(null);
     }

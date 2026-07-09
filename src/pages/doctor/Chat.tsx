@@ -5,12 +5,14 @@ import { ChatPanel } from "@/components/shared/ChatPanel";
 export default function DoctorChat() {
   const { user } = useAuth();
   return (
-    <div>
+    <div className="flex h-[calc(100dvh-8rem)] flex-col">
       <PageHeader
         title="Messages"
         subtitle="Communicate securely with your patients inside the platform."
       />
-      <ChatPanel userId={user!.uid} field="doctorId" enforceWindow />
+      <div className="min-h-0 flex-1">
+        <ChatPanel userId={user!.uid} field="doctorId" enforceWindow />
+      </div>
     </div>
   );
 }

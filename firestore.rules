@@ -101,6 +101,23 @@ service cloud.firestore {
       allow write: if isAdmin();      // only admins broadcast
     }
 
+    // ---- prescriptions -----------------------------------------
+    // Keyed by appointment id. The issuing doctor and the patient (plus
+    // admins) may read; only the issuing doctor or an admin may write.
+    match /prescriptions/{rxId} {
+      allow read: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.patientId == request.auth.uid ||
+        resource.data.doctorId == request.auth.uid
+      );
+      allow create, update: if isSignedIn() && (
+        isAdmin() || request.resource.data.doctorId == request.auth.uid
+      );
+      allow delete: if isSignedIn() && (
+        isAdmin() || resource.data.doctorId == request.auth.uid
+      );
+    }
+
     // ---- settings ----------------------------------------------
     // Payment accounts shown to patients on the booking popup; the public
     // `site` and `banners` docs are readable by anyone (landing page).

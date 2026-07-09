@@ -24,6 +24,7 @@ import type {
   Doctor,
   Appointment,
   Promotion,
+  Prescription,
   TimeSlot,
   PaymentSettings,
   SiteSettings,
@@ -65,11 +66,6 @@ export async function listPatients(): Promise<AppUser[]> {
   const q = query(collection(db, "users"), where("role", "==", "patient"));
   const snap = await getDocs(q);
   return snap.docs.map((d) => ({ uid: d.id, ...d.data() }) as AppUser);
-}
-
-export async function deleteUserRecord(uid: string): Promise<void> {
-  if (DEMO) return demo.demoDeleteUser(uid);
-  await deleteDoc(doc(db, "users", uid));
 }
 
 /**
@@ -301,6 +297,53 @@ export async function updatePromotion(
 export async function deletePromotion(id: string): Promise<void> {
   if (DEMO) return demo.demoDeletePromotion(id);
   await deleteDoc(doc(db, "promotions", id));
+}
+
+// ============================================================
+// Prescriptions  (stored at prescriptions/{appointmentId})
+// ============================================================
+
+export async function getPrescription(id: string): Promise<Prescription | null> {
+  if (DEMO) return demo.demoGetPrescription(id);
+  const snap = await getDoc(doc(db, "prescriptions", id));
+  return snap.exists() ? ({ id, ...snap.data() } as Prescription) : null;
+}
+
+/** A prescription is keyed by its appointment id (one per appointment). */
+export async function getPrescriptionForAppointment(
+  appointmentId: string,
+): Promise<Prescription | null> {
+  if (DEMO) return demo.demoGetPrescriptionForAppointment(appointmentId);
+  return getPrescription(appointmentId);
+}
+
+export async function savePrescription(p: Prescription): Promise<void> {
+  if (DEMO) return demo.demoSavePrescription(p);
+  const { id, createdAt, ...rest } = p;
+  const payload: Record<string, unknown> = { ...rest, updatedAt: serverTimestamp() };
+  if (!createdAt) payload.createdAt = serverTimestamp();
+  await setDoc(doc(db, "prescriptions", id), payload, { merge: true });
+}
+
+export async function listPrescriptionsFor(
+  field: "patientId" | "doctorId",
+  id: string,
+): Promise<Prescription[]> {
+  if (DEMO) return demo.demoListPrescriptionsFor(field, id);
+  // where-only (no composite index needed); sort newest-first client-side.
+  const q = query(collection(db, "prescriptions"), where(field, "==", id));
+  const snap = await getDocs(q);
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Prescription)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+export async function listAllPrescriptions(): Promise<Prescription[]> {
+  if (DEMO) return demo.demoListAllPrescriptions();
+  const snap = await getDocs(collection(db, "prescriptions"));
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Prescription)
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 // ============================================================

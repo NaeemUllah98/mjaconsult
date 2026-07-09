@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarCheck,
   Search,
@@ -8,19 +8,25 @@ import {
   BadgeCheck,
   XCircle,
   Wallet,
+  FileText,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAsync } from "@/hooks/useAsync";
-import { listAllAppointments, updateAppointment } from "@/lib/api";
+import {
+  listAllAppointments,
+  updateAppointment,
+  listAllPrescriptions,
+} from "@/lib/api";
 import { shareMeetLink } from "@/lib/meet";
 import { notify } from "@/lib/notifications";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AppointmentCard } from "@/components/shared/AppointmentCard";
+import { PrescriptionViewer } from "@/components/shared/PrescriptionViewer";
 import { Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { StatCard, PageLoader, EmptyState } from "@/components/ui/Misc";
-import type { Appointment } from "@/types";
+import type { Appointment, Prescription } from "@/types";
 
 type View = "all" | "payments" | "meets";
 
@@ -32,6 +38,17 @@ export default function AdminAppointments() {
   const [meetUrl, setMeetUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // All issued prescriptions, keyed by appointment id.
+  const [rxMap, setRxMap] = useState<Record<string, Prescription>>({});
+  useEffect(() => {
+    listAllPrescriptions().then((list) => {
+      const m: Record<string, Prescription> = {};
+      list.forEach((p) => (m[p.appointmentId] = p));
+      setRxMap(m);
+    });
+  }, []);
+  const [viewing, setViewing] = useState<Prescription | null>(null);
 
   const pendingPayments = useMemo(
     () => (data ?? []).filter((a) => a.paymentStatus === "proof_submitted"),
@@ -150,8 +167,8 @@ export default function AdminAppointments() {
           tone="violet"
           icon={<Video className="h-6 w-6 text-violet-500" />}
           title={`${pendingMeets.length} Meet link${pendingMeets.length > 1 ? "s" : ""} requested`}
-          body="A doctor or patient is waiting for a Google Meet link."
-          actionLabel="Create links"
+          body="A patient is waiting on their doctor for a Google Meet link. Doctors send these themselves — step in here only if one needs help."
+          actionLabel="View requests"
           onAction={() => setView("meets")}
         />
       )}
@@ -236,12 +253,22 @@ export default function AdminAppointments() {
                   {a.meetRequested && !a.meetLink && a.status === "confirmed" && (
                     <Button
                       size="sm"
+                      variant="outline"
                       onClick={() => {
                         setMeetFor(a);
                         setMeetUrl("");
                       }}
                     >
-                      <Video className="h-4 w-4" /> Create &amp; share link
+                      <Video className="h-4 w-4" /> Help — create &amp; share link
+                    </Button>
+                  )}
+                  {rxMap[a.id] && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setViewing(rxMap[a.id])}
+                    >
+                      <FileText className="h-4 w-4" /> Prescription
                     </Button>
                   )}
                 </>
@@ -258,7 +285,7 @@ export default function AdminAppointments() {
         title="Create & share Google Meet link"
         description={
           meetFor
-            ? `For ${meetFor.doctorName} & ${meetFor.patientName}. Both will be notified, and you can join too.`
+            ? `Backup path — normally ${meetFor.doctorName} sends this themselves. For ${meetFor.doctorName} & ${meetFor.patientName}; both will be notified.`
             : undefined
         }
         footer={
@@ -292,6 +319,12 @@ export default function AdminAppointments() {
           </p>
         </div>
       </Modal>
+
+      <PrescriptionViewer
+        open={!!viewing}
+        onClose={() => setViewing(null)}
+        rx={viewing}
+      />
     </div>
   );
 }

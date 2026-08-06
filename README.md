@@ -37,26 +37,7 @@ npm install
 npm run dev
 ```
 
-### 🧪 Demo mode (no setup required)
 
-If you **don't** add Firebase keys, the app automatically runs in **Demo mode** on a
-seeded in-memory backend (persisted to your browser's localStorage). This lets you
-explore the entire platform immediately. A purple banner marks demo mode, and the
-login page has **one-tap quick-login** buttons for each role.
-
-**Demo accounts:**
-
-| Role | Email | Password |
-|------|-------|----------|
-| Admin | `admin@mjaconsult.com` | `admin123` |
-| Doctor | `doctor@mjaconsult.com` | `doctor123` |
-| Patient | `patient@mjaconsult.com` | `patient123` |
-
-It comes preloaded with 5 doctors, sample patients, appointments, a chat thread,
-promotions and notifications. Use the banner's **Reset** to restore the original data.
-
-When you're ready to go live, add the real keys below and the app switches to
-Firebase automatically.
 
 ---
 

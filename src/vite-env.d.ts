@@ -15,6 +15,7 @@ interface ImportMetaEnv {
   readonly VITE_GOOGLE_CLIENT_ID: string;
   readonly VITE_GOOGLE_API_KEY: string;
   readonly VITE_ADMIN_EMAIL: string;
+  readonly VITE_DELETE_WORKER_URL: string;
 }
 
 interface ImportMeta {

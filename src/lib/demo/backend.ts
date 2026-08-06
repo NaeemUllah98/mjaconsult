@@ -1,4 +1,5 @@
 import { isFirebaseConfigured } from "@/lib/firebase";
+import { hasExpiredLicense } from "@/utils/license";
 import {
   buildSeed,
   DEMO_PASSWORDS,
@@ -126,6 +127,9 @@ export function demoLogin(email: string, password: string): AppUser {
     db.passwordOverrides?.[user.uid] ?? DEMO_PASSWORDS[user.uid] ?? "patient123";
   if (password !== expected) throw { code: "auth/wrong-password" };
   if (user.active === false) throw { code: "auth/user-disabled" };
+  if (user.role === "doctor" && hasExpiredLicense(demoGetDoctor(user.uid))) {
+    throw { code: "auth/license-expired" };
+  }
   db.currentUid = user.uid;
   save();
   return clone(user);
@@ -145,6 +149,9 @@ export function demoLoginAs(uid: string): AppUser {
   const user = db.users.find((u) => u.uid === uid);
   if (!user) throw { code: "auth/user-not-found" };
   if (user.active === false) throw { code: "auth/user-disabled" };
+  if (user.role === "doctor" && hasExpiredLicense(demoGetDoctor(uid))) {
+    throw { code: "auth/license-expired" };
+  }
   db.currentUid = uid;
   save();
   return clone(user);

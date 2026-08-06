@@ -12,6 +12,7 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import * as demo from "./demo/backend";
+import type { DoctorLicense } from "@/types";
 
 /**
  * Create a new Doctor login + profile WITHOUT signing the admin out.
@@ -43,8 +44,12 @@ export interface NewDoctorInput {
   qualifications?: string;
   experienceYears?: number;
   bio?: string;
+  /** Country the doctor practises/is based in. */
+  country?: string;
   /** Admin-uploaded signature stamp printed on this doctor's prescriptions. */
   stampUrl?: string;
+  /** Admin-verified medical licenses; drives the "Verified" badge + login gate. */
+  licenses?: DoctorLicense[];
 }
 
 export async function createDoctorAccount(input: NewDoctorInput): Promise<void> {
@@ -62,12 +67,14 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
       qualifications: input.qualifications ?? "",
       experienceYears: input.experienceYears ?? 0,
       bio: input.bio ?? "",
+      country: input.country ?? "",
       fees: input.fees,
       currency: input.currency ?? "USD",
       availability: {},
       slotDurationMins: 30,
       timezone: "Asia/Karachi",
       stampUrl: input.stampUrl ?? "",
+      licenses: input.licenses ?? [],
     });
     return;
   }
@@ -98,12 +105,14 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
       qualifications: input.qualifications ?? "",
       experienceYears: input.experienceYears ?? 0,
       bio: input.bio ?? "",
+      country: input.country ?? "",
       fees: input.fees,
       currency: input.currency ?? "USD",
       availability: {},
       slotDurationMins: 30,
       timezone: "Asia/Karachi",
       stampUrl: input.stampUrl ?? "",
+      licenses: input.licenses ?? [],
       createdAt: serverTimestamp(),
     };
 

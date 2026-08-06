@@ -9,6 +9,9 @@ import {
   MessageSquare,
   ArrowLeft,
   CheckCircle2,
+  ShieldCheck,
+  ShieldQuestion,
+  MapPin,
 } from "lucide-react";
 import { useAsync } from "@/hooks/useAsync";
 import { getDoctor } from "@/lib/api";
@@ -18,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
 import { BookingModal } from "@/components/shared/BookingModal";
+import { isDoctorVerified } from "@/utils/license";
 import {
   formatCurrency,
   formatTime,
@@ -48,6 +52,7 @@ export default function DoctorProfile() {
   const workingDays = WEEKDAYS.filter(
     (d) => (doctor.availability?.[d] ?? []).length > 0,
   );
+  const verified = isDoctorVerified(doctor);
 
   return (
     <div>
@@ -73,6 +78,16 @@ export default function DoctorProfile() {
               {doctor.name}
             </h1>
             <p className="font-medium text-brand-600">{doctor.specialization}</p>
+            <p
+              className={`mt-2 flex items-center justify-center gap-1.5 text-sm font-bold ${verified ? "text-emerald-600" : "text-ink-muted"}`}
+            >
+              {verified ? (
+                <ShieldCheck className="h-4 w-4" />
+              ) : (
+                <ShieldQuestion className="h-4 w-4" />
+              )}
+              {verified ? "Verified — license on file" : "Not verified"}
+            </p>
             <div className="mt-3 flex items-center justify-center gap-3 text-sm text-ink-muted">
               <span className="flex items-center gap-1">
                 <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
@@ -81,6 +96,11 @@ export default function DoctorProfile() {
               {doctor.experienceYears ? (
                 <span className="flex items-center gap-1">
                   <Briefcase className="h-4 w-4" /> {doctor.experienceYears} yrs
+                </span>
+              ) : null}
+              {doctor.country ? (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-4 w-4" /> {doctor.country}
                 </span>
               ) : null}
             </div>
@@ -147,6 +167,30 @@ export default function DoctorProfile() {
               </Card>
             ) : null}
           </div>
+
+          {verified && (
+            <Card>
+              <div className="flex items-center gap-2 text-emerald-600">
+                <ShieldCheck className="h-5 w-5" />
+                <h3 className="font-display font-bold text-ink">
+                  Verified credentials
+                </h3>
+              </div>
+              <p className="mt-1 text-xs text-ink-muted">
+                License(s) reviewed and kept current by the MJACONSULT admin.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+                {(doctor.licenses ?? []).map((l) => (
+                  <span
+                    key={l.id}
+                    className="flex items-center gap-1 text-sm font-medium text-emerald-600"
+                  >
+                    <ShieldCheck className="h-3.5 w-3.5" /> {l.title}
+                  </span>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Availability */}
           <Card>

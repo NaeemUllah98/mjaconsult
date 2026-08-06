@@ -48,6 +48,25 @@ export interface TimeSlot {
   end: string; // "HH:mm"
 }
 
+/**
+ * A single medical license / certification the admin has verified and
+ * uploaded on a doctor's behalf. A doctor may hold several (e.g. a national
+ * council registration plus a specialty board certification), each with its
+ * own expiry.
+ */
+export interface DoctorLicense {
+  id: string;
+  /** e.g. "PMC Medical License", "Board Certification (Cardiology)". */
+  title: string;
+  /** Optional registration/license number shown for reference. */
+  licenseNumber?: string;
+  /** Cloudinary URL of the uploaded license document/image. */
+  documentUrl: string;
+  /** ISO date ("YYYY-MM-DD") the license expires. */
+  expiryDate: string;
+  uploadedAt?: FireDate;
+}
+
 /** Extended doctor profile in `doctors/{uid}`. */
 export interface Doctor extends AppUser {
   role: "doctor";
@@ -56,6 +75,8 @@ export interface Doctor extends AppUser {
   experienceYears?: number;
   qualifications?: string;
   languages?: string[];
+  /** Country the doctor practises/is based in (admin-managed). */
+  country?: string;
   fees: number; // consultation fee in local currency
   currency?: string;
   rating?: number;
@@ -75,6 +96,12 @@ export interface Doctor extends AppUser {
    * admin). Stamped on the bottom-right of prescriptions this doctor issues.
    */
   stampUrl?: string;
+  /**
+   * Medical licenses/certifications the admin has verified for this doctor.
+   * Drives the patient-facing "Verified" badge and blocks login once expired
+   * — see `src/utils/license.ts`.
+   */
+  licenses?: DoctorLicense[];
 }
 
 /** Patient profile extras in `patients/{uid}` (optional, base is `users`). */
@@ -106,6 +133,13 @@ export interface Appointment {
    * appointments booked before timezone tracking was added).
    */
   doctorTimezone?: string;
+  /**
+   * Snapshot of the booking patient's own IANA timezone (their browser's, at
+   * booking time). Used only to personalize post-booking notification text
+   * ("...your time") — display logic elsewhere derives the viewer's timezone
+   * live instead, since it's more reliable than this snapshot.
+   */
+  patientTimezone?: string;
   status: AppointmentStatus;
   reason?: string;
   fee: number;

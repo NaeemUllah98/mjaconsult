@@ -1,0 +1,13 @@
+{
+  "name": "mjaconsult-delete-account-worker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker that deletes a Firebase user (Auth + Firestore) for MJACONSULT admin.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.90.0"
+  }
+}

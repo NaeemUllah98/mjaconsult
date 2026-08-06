@@ -18,8 +18,9 @@ import {
 } from "firebase/auth";
 import toast from "react-hot-toast";
 import { auth, googleProvider, isFirebaseConfigured } from "@/lib/firebase";
-import { getUser, upsertUser } from "@/lib/api";
+import { getUser, upsertUser, getDoctor } from "@/lib/api";
 import * as demo from "@/lib/demo/backend";
+import { hasExpiredLicense } from "@/utils/license";
 import type { AppUser, Role } from "@/types";
 
 interface AuthContextValue {
@@ -93,6 +94,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         "Your account has been disabled. Please contact support.",
       );
     }
+    if (profile.role === "doctor") {
+      const doctorProfile = await getDoctor(fb.uid);
+      if (hasExpiredLicense(doctorProfile)) {
+        await fbSignOut(auth);
+        setUser(null);
+        throw new Error(
+          "Your medical license has expired. Please contact the admin to renew it before logging in again.",
+        );
+      }
+    }
     setUser(profile);
     return profile;
   }
@@ -106,6 +117,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         demo.demoSignOut();
         setUser(null);
         toast.error("Your account has been disabled. Please contact support.");
+      } else if (
+        current?.role === "doctor" &&
+        hasExpiredLicense(demo.demoGetDoctor(current.uid))
+      ) {
+        demo.demoSignOut();
+        setUser(null);
+        toast.error(
+          "Your medical license has expired. Please contact the admin to renew it.",
+        );
       } else {
         setUser(current);
       }

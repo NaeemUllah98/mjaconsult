@@ -1,6 +1,7 @@
-import { parseISO } from "date-fns";
-import { zonedTimeToUtc } from "@/utils/timezone";
-import type { Appointment, Promotion } from "@/types";
+import { addDays, format, parseISO } from "date-fns";
+import { zonedTimeToUtc, dateInZone } from "@/utils/timezone";
+import { weekdayFromISO } from "@/utils/format";
+import type { Appointment, Doctor, Promotion, TimeSlot } from "@/types";
 
 /** Today's calendar date as "yyyy-MM-dd", using the viewer's local clock. */
 export function todayISO(): string {
@@ -36,6 +37,69 @@ export function isPaid(appt: Appointment): boolean {
     appt.paymentStatus === "free" ||
     appt.paymentStatus === "verified"
   );
+}
+
+// ---- Cross-timezone slot resolution ------------------------------------
+
+/** A doctor's slot, resolved to the real calendar day (in EACH party's own
+ * timezone) and real UTC instant it falls on — see resolveSlotsForPatientDay. */
+export interface ResolvedSlot {
+  slot: TimeSlot;
+  /** The doctor's OWN calendar day this slot occurs on. This is what must be
+   * stored as `Appointment.date` — it is NOT always the same calendar day the
+   * patient was browsing (see below). */
+  doctorDateISO: string;
+  startUtc: Date;
+  endUtc: Date;
+}
+
+/**
+ * A doctor's availability is defined per weekday, in wall-clock times
+ * meaningful only in THEIR OWN timezone. A patient browsing a specific
+ * calendar day in THEIR OWN timezone is not always looking at the same
+ * calendar day for the doctor — e.g. an 11:45 PM slot in Dubai is 12:45 AM
+ * the *next* day in Pakistan (an hour ahead). Naively keying off "the weekday
+ * name of the date the patient clicked" gets slots like this wrong: hidden
+ * under the wrong day chip, or — if shown — stored with the wrong calendar
+ * date from the doctor's perspective.
+ *
+ * This resolves the correct set of bookable slots for a given patient-local
+ * day by checking the (at most two) doctor-local calendar days that could
+ * overlap it, converting each candidate slot to its real UTC instant, and
+ * keeping only the ones that actually land inside the patient's chosen day.
+ * Each result carries its own correct `doctorDateISO` — two slots shown
+ * under the same patient-local day chip can legitimately belong to two
+ * different doctor-local calendar days near the boundary.
+ */
+export function resolveSlotsForPatientDay(
+  doctor: Pick<Doctor, "availability" | "timezone">,
+  patientDateISO: string,
+  patientTimeZone: string,
+): ResolvedSlot[] {
+  const doctorTz = doctor.timezone || "UTC";
+  const dayStartUtc = zonedTimeToUtc(patientDateISO, "00:00", patientTimeZone);
+  const nextDayISO = format(addDays(parseISO(patientDateISO), 1), "yyyy-MM-dd");
+  const dayEndUtc = zonedTimeToUtc(nextDayISO, "00:00", patientTimeZone);
+
+  const candidateDates = new Set<string>([
+    dateInZone(dayStartUtc, doctorTz),
+    dateInZone(new Date(dayEndUtc.getTime() - 60_000), doctorTz),
+  ]);
+
+  const resolved: ResolvedSlot[] = [];
+  candidateDates.forEach((doctorDateISO) => {
+    const weekday = weekdayFromISO(doctorDateISO);
+    const slots = doctor.availability?.[weekday] ?? [];
+    slots.forEach((s) => {
+      const startUtc = zonedTimeToUtc(doctorDateISO, s.start, doctorTz);
+      const endUtc = zonedTimeToUtc(doctorDateISO, s.end, doctorTz);
+      if (startUtc >= dayStartUtc && startUtc < dayEndUtc) {
+        resolved.push({ slot: s, doctorDateISO, startUtc, endUtc });
+      }
+    });
+  });
+  resolved.sort((a, b) => a.startUtc.getTime() - b.startUtc.getTime());
+  return resolved;
 }
 
 // ---- Appointment time window -------------------------------------------

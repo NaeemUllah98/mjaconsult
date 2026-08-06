@@ -17,7 +17,7 @@ import {
   updateAppointment,
   listAllPrescriptions,
 } from "@/lib/api";
-import { shareMeetLink } from "@/lib/meet";
+import { shareMeetLink, normalizeMeetUrl } from "@/lib/meet";
 import { notify } from "@/lib/notifications";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { AppointmentCard } from "@/components/shared/AppointmentCard";
@@ -114,10 +114,11 @@ export default function AdminAppointments() {
   }
 
   async function share() {
-    if (!meetFor || !meetUrl.startsWith("http")) return;
+    const normalized = normalizeMeetUrl(meetUrl);
+    if (!meetFor || !normalized) return;
     setBusy(true);
     try {
-      await shareMeetLink(meetFor, meetUrl.trim());
+      await shareMeetLink(meetFor, normalized);
       toast.success("Meet link shared with the doctor and patient");
       setMeetFor(null);
       setMeetUrl("");
@@ -293,7 +294,7 @@ export default function AdminAppointments() {
             <Button variant="outline" onClick={() => setMeetFor(null)}>
               Cancel
             </Button>
-            <Button onClick={share} disabled={!meetUrl.startsWith("http")} loading={busy}>
+            <Button onClick={share} disabled={!normalizeMeetUrl(meetUrl)} loading={busy}>
               Share with both
             </Button>
           </>
@@ -311,6 +312,11 @@ export default function AdminAppointments() {
             value={meetUrl}
             onChange={(e) => setMeetUrl(e.target.value)}
             icon={<Video className="h-4 w-4" />}
+            error={
+              meetUrl.trim() && !normalizeMeetUrl(meetUrl)
+                ? "That doesn't look like a valid link — check for typos."
+                : undefined
+            }
           />
           <p className="text-xs text-ink-muted">
             Create the meeting in your Google account, then paste the link here.

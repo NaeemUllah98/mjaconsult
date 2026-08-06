@@ -18,7 +18,7 @@ import {
   listPrescriptionsFor,
 } from "@/lib/api";
 import { ensureThread } from "@/lib/chat";
-import { shareMeetLink } from "@/lib/meet";
+import { shareMeetLink, normalizeMeetUrl } from "@/lib/meet";
 import {
   isPaid,
   canShareMeet,
@@ -93,10 +93,11 @@ export default function DoctorAppointments() {
   }
 
   async function sendMeetLink() {
-    if (!meetFor || !meetUrl.startsWith("http")) return;
+    const normalized = normalizeMeetUrl(meetUrl);
+    if (!meetFor || !normalized) return;
     setSharingMeet(true);
     try {
-      await shareMeetLink(meetFor, meetUrl.trim(), true);
+      await shareMeetLink(meetFor, normalized, true);
       toast.success("Meet link sent to your patient");
       setMeetFor(null);
       setMeetUrl("");
@@ -262,7 +263,7 @@ export default function DoctorAppointments() {
             </Button>
             <Button
               onClick={sendMeetLink}
-              disabled={!meetUrl.startsWith("http")}
+              disabled={!normalizeMeetUrl(meetUrl)}
               loading={sharingMeet}
             >
               Send to patient
@@ -282,6 +283,11 @@ export default function DoctorAppointments() {
             value={meetUrl}
             onChange={(e) => setMeetUrl(e.target.value)}
             icon={<Video className="h-4 w-4" />}
+            error={
+              meetUrl.trim() && !normalizeMeetUrl(meetUrl)
+                ? "That doesn't look like a valid link — check for typos."
+                : undefined
+            }
           />
           <p className="text-xs text-ink-muted">
             Create the meeting in your Google account, then paste the link

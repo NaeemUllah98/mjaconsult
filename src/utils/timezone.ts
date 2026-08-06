@@ -148,6 +148,19 @@ export function formatDateInZone(date: Date, timeZone: string): string {
   }).format(date);
 }
 
+/** "yyyy-MM-dd" for a UTC instant, as read in the given IANA timezone. */
+export function dateInZone(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const map: Record<string, string> = {};
+  parts.forEach((p) => (map[p.type] = p.value));
+  return `${map.year}-${map.month}-${map.day}`;
+}
+
 /** Short zone label for a UTC instant, e.g. "PKT" or "GMT+5". */
 export function zoneAbbreviation(date: Date, timeZone: string): string {
   const part = new Intl.DateTimeFormat("en-US", {
@@ -157,4 +170,36 @@ export function zoneAbbreviation(date: Date, timeZone: string): string {
     .formatToParts(date)
     .find((p) => p.type === "timeZoneName");
   return part?.value ?? timeZone;
+}
+
+/**
+ * Human label for an appointment's date+slot, for a specific reader.
+ *
+ * When `viewerTimeZone` is given and differs from the doctor's, THEIR time
+ * leads (e.g. "Jul 24 at 8:00 PM your time") with the doctor's own wall-clock
+ * time shown parenthetically for reference (e.g. "(6:00 PM GMT+3 doctor's
+ * time)") — never the other way around. A patient booking from a different
+ * country cares about their own clock first; showing the doctor's raw time as
+ * the headline number (with the reader's time as an afterthought, or missing
+ * entirely) is exactly what caused the mismatched-time confusion.
+ *
+ * Without `viewerTimeZone` (used for the doctor's own notifications, or when
+ * the reader's zone isn't known), this returns just the doctor's time with
+ * its zone abbreviation attached so it's never ambiguous, e.g.
+ * "Jul 24 at 6:00 PM GMT+3".
+ */
+export function apptTimeLabel(
+  dateISO: string,
+  time: string,
+  doctorTimeZone: string,
+  viewerTimeZone?: string,
+): string {
+  const instant = zonedTimeToUtc(dateISO, time, doctorTimeZone);
+  const doctorTime = `${formatTimeInZone(instant, doctorTimeZone)} ${zoneAbbreviation(instant, doctorTimeZone)}`;
+  if (viewerTimeZone && viewerTimeZone !== doctorTimeZone) {
+    const viewerDate = formatDateInZone(instant, viewerTimeZone);
+    const viewerTime = formatTimeInZone(instant, viewerTimeZone);
+    return `${viewerDate} at ${viewerTime} your time (${doctorTime} doctor's time)`;
+  }
+  return `${formatDateInZone(instant, doctorTimeZone)} at ${doctorTime}`;
 }

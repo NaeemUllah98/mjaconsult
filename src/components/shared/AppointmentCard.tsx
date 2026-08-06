@@ -5,7 +5,12 @@ import { StatusBadge, PaymentBadge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatDate, formatSlot } from "@/utils/format";
 import { appointmentWindow } from "@/utils/appointment";
-import { browserTimeZone, formatTimeInZone } from "@/utils/timezone";
+import {
+  browserTimeZone,
+  formatTimeInZone,
+  formatDateInZone,
+  zoneAbbreviation,
+} from "@/utils/timezone";
 import type { Appointment } from "@/types";
 
 /** Whose perspective the card is shown from (controls which name is featured). */
@@ -29,15 +34,26 @@ export function AppointmentCard({
       : "Patient";
   const photo = showDoctor ? appt.doctorPhotoURL : undefined;
 
-  // The doctor already sees times in their own zone; everyone else may be
-  // browsing from elsewhere, so show their local equivalent alongside it.
+  // The doctor already sees times in their own zone — no conversion needed.
+  // Everyone else (patient, admin) is browsing from wherever they are, so
+  // THEIR local date+time is what should read as the primary, prominent
+  // values; the doctor's own wall-clock date+time is shown only as a small,
+  // explicitly-zoned secondary line. A date-only conversion matters too, not
+  // just time: near midnight, the doctor's own calendar day for a slot can
+  // be a different date than the viewer's (see resolveSlotsForPatientDay).
+  const viewerTz = browserTimeZone();
   const showLocalTime =
     perspective !== "doctor" &&
-    (appt.doctorTimezone || "UTC") !== browserTimeZone();
+    (appt.doctorTimezone || "UTC") !== viewerTz;
+  const doctorZoneAbbr = showLocalTime
+    ? zoneAbbreviation(appointmentWindow(appt).start, appt.doctorTimezone || "UTC")
+    : null;
+  const localDate = showLocalTime
+    ? formatDateInZone(appointmentWindow(appt).start, viewerTz)
+    : null;
   const localRange = showLocalTime
     ? (() => {
         const { start, end } = appointmentWindow(appt);
-        const viewerTz = browserTimeZone();
         return `${formatTimeInZone(start, viewerTz)} – ${formatTimeInZone(end, viewerTz)}`;
       })()
     : null;
@@ -65,15 +81,16 @@ export function AppointmentCard({
       <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-surface-subtle p-3 text-sm">
         <div className="flex items-center gap-2 text-ink-soft">
           <Calendar className="h-4 w-4 text-brand-400" />
-          {formatDate(appt.date, "EEE, MMM d")}
+          {showLocalTime ? localDate : formatDate(appt.date, "EEE, MMM d")}
         </div>
         <div className="flex items-center gap-2 text-ink-soft">
           <Clock className="h-4 w-4 text-brand-400" />
-          {formatSlot(appt.slot)}
+          {showLocalTime ? localRange : formatSlot(appt.slot)}
         </div>
-        {localRange && (
+        {showLocalTime && (
           <div className="col-span-2 text-xs text-ink-muted">
-            Your time: {localRange}
+            {appt.doctorName}'s time: {formatDate(appt.date, "EEE, MMM d")},{" "}
+            {formatSlot(appt.slot)} {doctorZoneAbbr}
           </div>
         )}
       </div>

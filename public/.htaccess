@@ -1,11 +1,21 @@
 # MJACONSULT — single-page-app routing for Apache (Hostinger).
 # This file is copied into dist/ on `npm run build`, so deep links like
-# /patient/appointments resolve to index.html instead of a 404.
+# /admin/doctors or /patient/appointments resolve to index.html instead of a 404
+# when the page is refreshed or opened directly.
+
+# Serve index.html as the directory default.
+DirectoryIndex index.html
+
+# Stop Apache's content negotiation from hijacking extensionless routes
+# (a common cause of 404s on refresh for /admin, /doctor, etc.).
+<IfModule mod_negotiation.c>
+  Options -MultiViews
+</IfModule>
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  # Don't rewrite real files or directories (assets, images, etc.).
+  # Don't rewrite requests for real files or directories (assets, images, etc.).
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
@@ -13,7 +23,8 @@
   RewriteRule ^ index.html [L]
 </IfModule>
 
-# Cache hashed assets aggressively; never cache index.html.
+# Cache hashed assets aggressively; NEVER cache index.html so a fresh deploy is
+# picked up immediately (prevents old asset hashes 404-ing after an update).
 <IfModule mod_headers.c>
   <FilesMatch "\.(js|css|woff2?|png|jpg|jpeg|gif|svg|webp)$">
     Header set Cache-Control "public, max-age=31536000, immutable"

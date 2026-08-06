@@ -1,12 +1,14 @@
 import { Link } from "react-router-dom";
-import { Star, Briefcase, ArrowRight } from "lucide-react";
+import { Star, Briefcase, ArrowRight, ShieldCheck, ShieldQuestion, MapPin } from "lucide-react";
 import { Avatar } from "@/components/ui/Avatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { formatCurrency } from "@/utils/format";
+import { isDoctorVerified } from "@/utils/license";
 import type { Doctor } from "@/types";
 
 export function DoctorCard({ doctor }: { doctor: Doctor }) {
+  const verified = isDoctorVerified(doctor);
   return (
     <div className="card group flex flex-col p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-glow">
       <div className="flex items-start gap-4">
@@ -29,7 +31,23 @@ export function DoctorCard({ doctor }: { doctor: Doctor }) {
                 {doctor.experienceYears} yrs
               </span>
             ) : null}
+            {doctor.country ? (
+              <span className="flex items-center gap-1">
+                <MapPin className="h-3.5 w-3.5" />
+                {doctor.country}
+              </span>
+            ) : null}
           </div>
+          <span
+            className={`mt-1.5 flex items-center gap-1 text-sm font-bold ${verified ? "text-emerald-600" : "text-ink-muted"}`}
+          >
+            {verified ? (
+              <ShieldCheck className="h-4 w-4" />
+            ) : (
+              <ShieldQuestion className="h-4 w-4" />
+            )}
+            {verified ? "Verified" : "Not verified"}
+          </span>
         </div>
       </div>
 

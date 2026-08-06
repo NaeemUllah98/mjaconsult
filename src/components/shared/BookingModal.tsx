@@ -27,20 +27,20 @@ import {
 } from "@/lib/api";
 import { DEFAULT_PAYMENT_SETTINGS } from "@/lib/demo/seed";
 import { notify, notifyMany, adminRecipients } from "@/lib/notifications";
-import { computePromoFee, discountLabel } from "@/utils/appointment";
 import {
-  formatCurrency,
-  formatTime,
-  weekdayFromISO,
-  WEEKDAY_LABELS,
-} from "@/utils/format";
+  computePromoFee,
+  discountLabel,
+  resolveSlotsForPatientDay,
+  type ResolvedSlot,
+} from "@/utils/appointment";
+import { formatCurrency, formatTime } from "@/utils/format";
 import {
   browserTimeZone,
-  zonedTimeToUtc,
   formatTimeInZone,
   zoneAbbreviation,
+  apptTimeLabel,
 } from "@/utils/timezone";
-import type { Doctor, Promotion, PaymentSettings, TimeSlot } from "@/types";
+import type { Doctor, Promotion, PaymentSettings } from "@/types";
 
 type View = "select" | "pay-accounts" | "pay-upload" | "submitted" | "done";
 
@@ -59,8 +59,8 @@ export function BookingModal({
 }) {
   const { user } = useAuth();
   const [dateISO, setDateISO] = useState("");
-  const [slot, setSlot] = useState<TimeSlot | null>(null);
-  const [taken, setTaken] = useState<string[]>([]);
+  const [selectedSlot, setSelectedSlot] = useState<ResolvedSlot | null>(null);
+  const [taken, setTaken] = useState<Set<string>>(new Set());
   const [reason, setReason] = useState("");
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [booking, setBooking] = useState(false);
@@ -77,12 +77,12 @@ export function BookingModal({
   const doctorTz = doctor.timezone || "UTC";
   const viewerTz = useMemo(() => browserTimeZone(), []);
   const showLocalTime = doctorTz !== viewerTz;
-  const viewerTimeFor = (time: string) =>
-    dateISO
-      ? formatTimeInZone(zonedTimeToUtc(dateISO, time, doctorTz), viewerTz)
-      : formatTime(time);
+  // A taken/lock key must include the doctor's own calendar day, not just the
+  // slot's start time — the same "18:00" start string can legitimately exist
+  // on two different doctor-local dates when a patient's day spans both.
+  const takenKey = (doctorDateISO: string, start: string) => `${doctorDateISO}__${start}`;
 
-  // Next 14 days as quick-pick chips.
+  // Next 14 days as quick-pick chips, in the PATIENT's own calendar.
   const days = useMemo(
     () =>
       Array.from({ length: 14 }, (_, i) => {
@@ -91,28 +91,48 @@ export function BookingModal({
           iso: format(d, "yyyy-MM-dd"),
           label: format(d, "EEE"),
           day: format(d, "d"),
-          weekday: weekdayFromISO(format(d, "yyyy-MM-dd")),
         };
       }),
     [],
   );
 
-  const slotsForDay: TimeSlot[] = dateISO
-    ? (doctor.availability?.[weekdayFromISO(dateISO)] ?? [])
-    : [];
+  // A doctor's availability is defined per weekday in THEIR OWN timezone —
+  // resolving "which of the doctor's slots fall inside this patient-local
+  // day" correctly requires checking the doctor-local calendar day(s) that
+  // actually overlap it, not just assuming the weekday names line up (see
+  // resolveSlotsForPatientDay for why that assumption breaks near midnight).
+  const slotsByDay = useMemo(() => {
+    const map: Record<string, ResolvedSlot[]> = {};
+    days.forEach((d) => {
+      map[d.iso] = resolveSlotsForPatientDay(doctor, d.iso, viewerTz);
+    });
+    return map;
+  }, [days, doctor, viewerTz]);
+
+  const resolvedSlotsForDay = dateISO ? (slotsByDay[dateISO] ?? []) : [];
 
   useEffect(() => {
     if (!dateISO) return;
-    setSlot(null);
+    setSelectedSlot(null);
     setLoadingSlots(true);
-    getTakenSlots(doctor.uid, dateISO)
-      .then(setTaken)
+    const doctorDates = Array.from(
+      new Set(resolvedSlotsForDay.map((r) => r.doctorDateISO)),
+    );
+    Promise.all(
+      doctorDates.map((d) =>
+        getTakenSlots(doctor.uid, d).then((starts) =>
+          starts.map((start) => takenKey(d, start)),
+        ),
+      ),
+    )
+      .then((lists) => setTaken(new Set(lists.flat())))
       .finally(() => setLoadingSlots(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateISO, doctor.uid]);
 
   function reset() {
     setDateISO("");
-    setSlot(null);
+    setSelectedSlot(null);
     setReason("");
     setView("select");
     setApptId(null);
@@ -125,8 +145,9 @@ export function BookingModal({
   }
 
   async function confirm() {
-    if (!user || !slot || !dateISO) return;
+    if (!user || !selectedSlot || !dateISO) return;
     setBooking(true);
+    const { slot, doctorDateISO } = selectedSlot;
 
     // --- Step 1: create the booking (this is the only step that may fail
     //     in a way that should abort the flow). ---
@@ -143,9 +164,13 @@ export function BookingModal({
         doctorName: doctor.name,
         doctorSpecialization: doctor.specialization,
         doctorPhotoURL: doctor.photoURL,
-        date: dateISO,
+        // The doctor's OWN calendar day for this slot — NOT necessarily the
+        // patient-local day (`dateISO`) they were browsing; see
+        // resolveSlotsForPatientDay for why those can differ near midnight.
+        date: doctorDateISO,
         slot,
         doctorTimezone: doctorTz,
+        patientTimezone: viewerTz,
         reason,
         fee,
         isFree,
@@ -158,8 +183,14 @@ export function BookingModal({
     } catch (err: any) {
       if (err?.message === "SLOT_TAKEN") {
         toast.error("Sorry, that slot was just taken. Please pick another.");
-        getTakenSlots(doctor.uid, dateISO).then(setTaken);
-        setSlot(null);
+        getTakenSlots(doctor.uid, doctorDateISO).then((starts) =>
+          setTaken((prev) => {
+            const next = new Set(prev);
+            starts.forEach((start) => next.add(takenKey(doctorDateISO, start)));
+            return next;
+          }),
+        );
+        setSelectedSlot(null);
       } else {
         console.error("booking failed", err);
         toast.error(err?.message ? `Booking failed: ${err.message}` : "Booking failed. Please try again.");
@@ -176,7 +207,11 @@ export function BookingModal({
 
     // Fan the new booking out to the doctor, the patient and every admin —
     // each gets an in-app notification and (if EmailJS is configured) an email.
-    const apptLabel = `${format(new Date(dateISO), "MMM d")} at ${formatTime(slot.start)}`;
+    // Label every mention of the time with its zone explicitly (and the
+    // patient's own converted time) so nobody misreads the doctor's local
+    // time as their own — see apptTimeLabel().
+    const doctorLabel = apptTimeLabel(doctorDateISO, slot.start, doctorTz);
+    const patientLabel = apptTimeLabel(doctorDateISO, slot.start, doctorTz, viewerTz);
     adminRecipients()
       .then((admins) =>
         notifyMany([
@@ -185,7 +220,7 @@ export function BookingModal({
             email: doctor.email,
             name: doctor.name,
             title: "New appointment booked",
-            body: `${user.name} booked you for ${apptLabel}.`,
+            body: `${user.name} booked you for ${doctorLabel}.`,
             type: "appointment",
             link: "/doctor/appointments",
             sendEmailToo: true,
@@ -196,8 +231,8 @@ export function BookingModal({
             name: user.name,
             title: isFree ? "Appointment confirmed ✅" : "Booking received",
             body: isFree
-              ? `Your appointment with ${doctor.name} on ${apptLabel} is confirmed.`
-              : `Your booking with ${doctor.name} on ${apptLabel} is received. Please complete payment to confirm your slot.`,
+              ? `Your appointment with ${doctor.name} on ${patientLabel} is confirmed.`
+              : `Your booking with ${doctor.name} on ${patientLabel} is received. Please complete payment to confirm your slot.`,
             type: "appointment",
             link: "/patient/appointments",
             sendEmailToo: true,
@@ -205,7 +240,7 @@ export function BookingModal({
           ...admins.map((a) => ({
             ...a,
             title: "New booking",
-            body: `${user.name} booked ${doctor.name} for ${apptLabel}.`,
+            body: `${user.name} booked ${doctor.name} for ${doctorLabel}.`,
             type: "appointment" as const,
             link: "/admin/appointments",
             sendEmailToo: true,
@@ -296,15 +331,15 @@ export function BookingModal({
             </p>
             <div className="flex gap-2 overflow-x-auto pb-2 no-scrollbar">
               {days.map((d) => {
-                const hasSlots = (doctor.availability?.[d.weekday] ?? []).length > 0;
-                const selected = dateISO === d.iso;
+                const hasSlots = (slotsByDay[d.iso] ?? []).length > 0;
+                const isSelectedDay = dateISO === d.iso;
                 return (
                   <button
                     key={d.iso}
                     disabled={!hasSlots}
                     onClick={() => setDateISO(d.iso)}
                     className={`flex min-w-[58px] flex-col items-center rounded-xl border px-3 py-2 text-sm transition ${
-                      selected
+                      isSelectedDay
                         ? "border-brand-400 bg-brand-gradient text-white shadow-glow"
                         : hasSlots
                           ? "border-surface-muted text-ink-soft hover:border-brand-300"
@@ -317,25 +352,25 @@ export function BookingModal({
                 );
               })}
             </div>
-            {dateISO && slotsForDay.length === 0 && (
+            {dateISO && resolvedSlotsForDay.length === 0 && (
               <p className="mt-2 text-sm text-ink-muted">
-                {doctor.name} isn't available on{" "}
-                {WEEKDAY_LABELS[weekdayFromISO(dateISO)]}.
+                {doctor.name} has no openings on this day.
               </p>
             )}
           </div>
 
           {/* Step 2: slot */}
-          {dateISO && slotsForDay.length > 0 && (
+          {dateISO && resolvedSlotsForDay.length > 0 && (
             <div>
               <p className="mb-1 flex items-center gap-2 text-sm font-semibold text-ink-soft">
                 <Clock className="h-4 w-4 text-brand-500" /> Pick a time
               </p>
               {showLocalTime && (
                 <p className="mb-2 text-xs text-ink-muted">
-                  Shown in {doctor.name}'s time (
-                  {zoneAbbreviation(zonedTimeToUtc(dateISO, "12:00", doctorTz), doctorTz)}) —
-                  your local time is shown underneath each slot.
+                  Times below are in <strong>your</strong> local time. {doctor.name}
+                  's time (
+                  {zoneAbbreviation(resolvedSlotsForDay[0].startUtc, doctorTz)}
+                  ) is shown underneath each slot.
                 </p>
               )}
               {loadingSlots ? (
@@ -345,28 +380,33 @@ export function BookingModal({
                 </div>
               ) : (
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {slotsForDay.map((s) => {
-                    const isTaken = taken.includes(s.start);
-                    const selected = slot?.start === s.start;
+                  {resolvedSlotsForDay.map((r) => {
+                    const key = takenKey(r.doctorDateISO, r.slot.start);
+                    const isTaken = taken.has(key);
+                    const isSelectedSlot =
+                      selectedSlot?.doctorDateISO === r.doctorDateISO &&
+                      selectedSlot?.slot.start === r.slot.start;
                     return (
                       <button
-                        key={s.start}
+                        key={key}
                         disabled={isTaken}
-                        onClick={() => setSlot(s)}
+                        onClick={() => setSelectedSlot(r)}
                         className={`flex flex-col items-center rounded-xl border px-2 py-2.5 text-sm font-medium transition ${
-                          selected
+                          isSelectedSlot
                             ? "border-brand-400 bg-brand-gradient text-white shadow-glow"
                             : isTaken
                               ? "cursor-not-allowed border-surface-muted bg-surface-muted text-ink-muted/50 line-through"
                               : "border-surface-muted text-ink-soft hover:border-brand-300"
                         }`}
                       >
-                        {formatTime(s.start)}
+                        {showLocalTime
+                          ? formatTimeInZone(r.startUtc, viewerTz)
+                          : formatTime(r.slot.start)}
                         {showLocalTime && (
                           <span
-                            className={`text-[11px] font-normal ${selected ? "text-white/80" : "text-ink-muted"}`}
+                            className={`text-[11px] font-normal ${isSelectedSlot ? "text-white/80" : "text-ink-muted"}`}
                           >
-                            {viewerTimeFor(s.start)} your time
+                            {formatTimeInZone(r.startUtc, doctorTz)} {doctor.name}'s time
                           </span>
                         )}
                       </button>
@@ -378,7 +418,7 @@ export function BookingModal({
           )}
 
           {/* Step 3: reason */}
-          {slot && (
+          {selectedSlot && (
             <Textarea
               label="Reason for visit (optional)"
               placeholder="Briefly describe your symptoms or reason…"
@@ -387,7 +427,7 @@ export function BookingModal({
             />
           )}
 
-          {slot && (
+          {selectedSlot && (
             <div className="space-y-3 rounded-xl bg-surface-subtle p-4 text-sm">
               <div className="flex items-center gap-2 text-ink-soft">
                 <Video className="h-4 w-4 text-brand-500" />
@@ -404,7 +444,7 @@ export function BookingModal({
             </div>
           )}
 
-          <Button fullWidth size="lg" disabled={!slot} loading={booking} onClick={confirm}>
+          <Button fullWidth size="lg" disabled={!selectedSlot} loading={booking} onClick={confirm}>
             {isFree
               ? "Book free consultation"
               : `Confirm & pay • ${formatCurrency(fee, currency)}`}
@@ -483,12 +523,23 @@ export function BookingModal({
         </div>
       )}
 
-      {view === "done" && (
+      {view === "done" && selectedSlot && (
         <ConfirmedView
           doctorName={doctor.name}
           dateISO={dateISO}
-          slot={slot!}
-          localTime={showLocalTime ? viewerTimeFor(slot!.start) : undefined}
+          primaryTime={
+            showLocalTime
+              ? `${formatTimeInZone(selectedSlot.startUtc, viewerTz)} your time`
+              : formatTime(selectedSlot.slot.start)
+          }
+          doctorTimeNote={
+            showLocalTime
+              ? `${formatTimeInZone(selectedSlot.startUtc, doctorTz)} ${zoneAbbreviation(
+                  selectedSlot.startUtc,
+                  doctorTz,
+                )} for ${doctor.name}`
+              : undefined
+          }
           onClose={closeAll}
         />
       )}
@@ -499,14 +550,14 @@ export function BookingModal({
 function ConfirmedView({
   doctorName,
   dateISO,
-  slot,
-  localTime,
+  primaryTime,
+  doctorTimeNote,
   onClose,
 }: {
   doctorName: string;
   dateISO: string;
-  slot: TimeSlot;
-  localTime?: string;
+  primaryTime: string;
+  doctorTimeNote?: string;
   onClose: () => void;
 }) {
   return (
@@ -519,8 +570,8 @@ function ConfirmedView({
       </h3>
       <p className="mt-2 text-ink-muted">
         Your appointment with <strong>{doctorName}</strong> on{" "}
-        {format(new Date(dateISO), "EEEE, MMM d")} at {formatTime(slot.start)}
-        {localTime ? ` (${localTime} your time)` : ""} is confirmed.
+        {format(new Date(dateISO), "EEEE, MMM d")} at {primaryTime}
+        {doctorTimeNote ? ` (${doctorTimeNote})` : ""} is confirmed.
       </p>
       <div className="mt-6 flex gap-3">
         <Button variant="outline" fullWidth onClick={onClose}>

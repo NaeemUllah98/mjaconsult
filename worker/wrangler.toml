@@ -1,0 +1,16 @@
+# Cloudflare Worker config for the MJACONSULT "delete account" endpoint.
+# Deploy from inside the `worker/` folder:  npx wrangler deploy
+name = "mjaconsult-delete-account"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+# The email that bootstraps your admin (same as VITE_ADMIN_EMAIL in the app).
+ADMIN_EMAIL = "admin@mjaconsult.com"
+# Your live site origin, for CORS. Change to your real domain once known,
+# e.g. "https://mjaconsult.com". Use "*" only while testing.
+ALLOWED_ORIGIN = "*"
+
+# Secrets are NOT stored here. Set them once with:
+#   npx wrangler secret put FIREBASE_SERVICE_ACCOUNT   (paste the whole JSON)
+#   npx wrangler secret put FIREBASE_API_KEY           (your VITE_FIREBASE_API_KEY)

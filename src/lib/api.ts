@@ -17,6 +17,7 @@ import {
 } from "firebase/firestore";
 import { sendPasswordResetEmail } from "firebase/auth";
 import { auth, db } from "./firebase";
+import { isAuthDeleteConfigured, deleteAuthAccount } from "./deleteAccount";
 import * as demo from "./demo/backend";
 import { DEFAULT_PAYMENT_SETTINGS, DEFAULT_SITE_SETTINGS, DEFAULT_BANNERS } from "./demo/seed";
 import type {
@@ -154,6 +155,14 @@ export async function setDoctorActive(
 
 export async function deleteDoctor(uid: string): Promise<void> {
   if (DEMO) return demo.demoDeleteDoctor(uid);
+  // Preferred path: the secure worker deletes the Firebase Auth login AND the
+  // Firestore docs in one privileged call (see src/lib/deleteAccount.ts).
+  if (isAuthDeleteConfigured) {
+    await deleteAuthAccount(uid);
+    return;
+  }
+  // Fallback (worker not deployed yet): a browser-only Spark app cannot delete
+  // another user's Auth login, so we can only remove the Firestore records here.
   await deleteDoc(doc(db, "doctors", uid));
   await deleteDoc(doc(db, "users", uid));
 }

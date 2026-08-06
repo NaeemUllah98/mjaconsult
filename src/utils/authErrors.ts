@@ -6,6 +6,8 @@ export function authErrorMessage(err: unknown): string {
       return "That email address looks invalid.";
     case "auth/user-disabled":
       return "This account has been deactivated. Please contact support.";
+    case "auth/license-expired":
+      return "Your medical license has expired. Please contact the admin to renew it before logging in again.";
     case "auth/user-not-found":
     case "auth/invalid-credential":
     case "auth/wrong-password":

@@ -39,8 +39,18 @@ service cloud.firestore {
     match /doctors/{doctorId} {
       // Public: patients browse doctors without restriction.
       allow read: if true;
-      // A doctor edits their own profile; admins manage all.
-      allow write: if isSignedIn() && (request.auth.uid == doctorId || isAdmin());
+      allow create: if isSignedIn() && (request.auth.uid == doctorId || isAdmin());
+      // Admins manage every field. A doctor may only touch their own live
+      // scheduling/presence fields (availability, slot length, timezone,
+      // online heartbeat) — credentials, fees, licenses and active status
+      // are admin-only so a doctor can't, e.g., erase an expired license or
+      // reactivate themselves to route around the app's login gate.
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == doctorId &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['availability', 'slotDurationMins', 'timezone', 'online', 'lastSeenAt'])
+      );
+      allow delete: if isAdmin();
     }
 
     // ---- appointments ------------------------------------------

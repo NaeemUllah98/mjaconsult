@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   Search,
@@ -10,6 +10,12 @@ import {
   Mail,
   AlertTriangle,
   Stamp,
+  ShieldCheck,
+  ShieldQuestion,
+  UploadCloud,
+  Loader2,
+  CheckCircle2,
+  MapPin,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import {
@@ -18,9 +24,14 @@ import {
   deleteDoctor,
   upsertDoctor,
 } from "@/lib/api";
+import { uploadFile } from "@/lib/cloudinary";
+import { cn } from "@/utils/cn";
 import { isDoctorOnline, isOnDutyNow } from "@/utils/presence";
-import { relativeTime } from "@/utils/format";
+import { relativeTime, formatDate } from "@/utils/format";
+import { hasExpiredLicense, isDoctorVerified, isLicenseExpired } from "@/utils/license";
+import { COUNTRIES } from "@/utils/countries";
 import { createDoctorAccount } from "@/lib/adminAccounts";
+import { isAuthDeleteConfigured } from "@/lib/deleteAccount";
 import { authErrorMessage } from "@/utils/authErrors";
 import { writeErrorMessage } from "@/utils/firebaseErrors";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -34,7 +45,7 @@ import { ConfirmDialog } from "@/components/ui/ConfirmDialog";
 import { ImageUploader } from "@/components/ui/ImageUploader";
 import { PageLoader, EmptyState } from "@/components/ui/Misc";
 import { formatCurrency } from "@/utils/format";
-import type { Doctor } from "@/types";
+import type { Doctor, DoctorLicense } from "@/types";
 
 const empty = {
   name: "",
@@ -44,12 +55,95 @@ const empty = {
   specialization: "",
   qualifications: "",
   experienceYears: 0,
+  country: "",
   fees: 0,
   currency: "USD",
   bio: "",
   photoURL: "",
   stampUrl: "",
+  licenses: [] as DoctorLicense[],
 };
+
+const newLicenseId = () =>
+  `lic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+/** Compact upload control for a license document (image or PDF). */
+function LicenseDocUpload({
+  value,
+  onUploaded,
+}: {
+  value?: string;
+  onUploaded: (url: string) => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  async function handleFile(file: File) {
+    setUploading(true);
+    try {
+      const res = await uploadFile(file, "licenses");
+      onUploaded(res.url);
+      toast.success("License document uploaded");
+    } catch (err: any) {
+      toast.error(err.message ?? "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div>
+      <span className="mb-1.5 block text-sm font-medium text-ink-soft">
+        Document
+      </span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*,application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+          e.target.value = "";
+        }}
+      />
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className={cn(
+          "flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed px-3 text-xs font-semibold transition",
+          value
+            ? "border-emerald-200 bg-emerald-50/50 text-emerald-700"
+            : "border-brand-200 bg-brand-50/40 text-brand-700 hover:border-brand-400 hover:bg-brand-50",
+        )}
+      >
+        {uploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin" /> Uploading…
+          </>
+        ) : value ? (
+          <>
+            <CheckCircle2 className="h-4 w-4" /> Uploaded — click to replace
+          </>
+        ) : (
+          <>
+            <UploadCloud className="h-4 w-4" /> Upload image or PDF
+          </>
+        )}
+      </button>
+      {value && (
+        <a
+          href={value}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 inline-block text-xs font-medium text-brand-600 underline"
+        >
+          View uploaded document
+        </a>
+      )}
+    </div>
+  );
+}
 
 export default function AdminDoctors() {
   const [data, setData] = useState<Doctor[] | null>(null);
@@ -98,17 +192,54 @@ export default function AdminDoctors() {
       specialization: d.specialization,
       qualifications: d.qualifications ?? "",
       experienceYears: d.experienceYears ?? 0,
+      country: d.country ?? "",
       fees: d.fees,
       currency: d.currency ?? "USD",
       bio: d.bio ?? "",
       photoURL: d.photoURL ?? "",
       stampUrl: d.stampUrl ?? "",
+      licenses: d.licenses ?? [],
     });
     setEditing(d);
   }
 
+  function addLicense() {
+    setForm((f) => ({
+      ...f,
+      licenses: [
+        ...f.licenses,
+        { id: newLicenseId(), title: "", licenseNumber: "", documentUrl: "", expiryDate: "" },
+      ],
+    }));
+  }
+
+  function updateLicense(id: string, patch: Partial<DoctorLicense>) {
+    setForm((f) => ({
+      ...f,
+      licenses: f.licenses.map((l) => (l.id === id ? { ...l, ...patch } : l)),
+    }));
+  }
+
+  function removeLicense(id: string) {
+    setForm((f) => ({ ...f, licenses: f.licenses.filter((l) => l.id !== id) }));
+  }
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
+    // Drop rows the admin started but never filled in; require a title,
+    // expiry and document on any row that has one of those set.
+    const licenses = form.licenses.filter(
+      (l) => l.title.trim() || l.expiryDate || l.documentUrl,
+    );
+    const incomplete = licenses.find(
+      (l) => !l.title.trim() || !l.expiryDate || !l.documentUrl,
+    );
+    if (incomplete) {
+      toast.error(
+        "Each license needs a name, expiry date and uploaded document — remove the incomplete row or fill it in.",
+      );
+      return;
+    }
     setSaving(true);
     try {
       if (editing) {
@@ -119,11 +250,13 @@ export default function AdminDoctors() {
           specialization: form.specialization,
           qualifications: form.qualifications,
           experienceYears: Number(form.experienceYears),
+          country: form.country,
           fees: Number(form.fees),
           currency: form.currency,
           bio: form.bio,
           photoURL: form.photoURL,
           stampUrl: form.stampUrl,
+          licenses,
         });
         toast.success("Doctor updated");
         setEditing(null);
@@ -141,11 +274,13 @@ export default function AdminDoctors() {
           specialization: form.specialization,
           qualifications: form.qualifications,
           experienceYears: Number(form.experienceYears),
+          country: form.country,
           fees: Number(form.fees),
           currency: form.currency,
           bio: form.bio,
           photoURL: form.photoURL,
           stampUrl: form.stampUrl,
+          licenses,
         });
         toast.success("Doctor account created");
         setAdding(false);
@@ -174,7 +309,11 @@ export default function AdminDoctors() {
     setBusy(true);
     try {
       await deleteDoctor(removeTarget.uid);
-      toast.success("Doctor removed");
+      toast.success(
+        isAuthDeleteConfigured
+          ? "Doctor deleted from login and database"
+          : "Doctor removed",
+      );
       setRemoveTarget(null);
       reload();
     } catch (err) {
@@ -222,6 +361,8 @@ export default function AdminDoctors() {
           {filtered.map((d) => {
             const online = isDoctorOnline(d);
             const onDuty = isOnDutyNow(d);
+            const verified = isDoctorVerified(d);
+            const expiredLicense = hasExpiredLicense(d);
             return (
             <Card key={d.uid} className="flex flex-col">
               <div className="flex items-start gap-3">
@@ -248,6 +389,16 @@ export default function AdminDoctors() {
                     {online ? "Online" : "Offline"}
                   </Badge>
                   {!d.active && <Badge tone="gray">Inactive</Badge>}
+                  <span
+                    className={`flex items-center gap-1 text-sm font-bold ${verified ? "text-emerald-600" : "text-ink-muted"}`}
+                  >
+                    {verified ? (
+                      <ShieldCheck className="h-4 w-4" />
+                    ) : (
+                      <ShieldQuestion className="h-4 w-4" />
+                    )}
+                    {verified ? "Verified" : "Not verified"}
+                  </span>
                 </div>
               </div>
 
@@ -265,6 +416,13 @@ export default function AdminDoctors() {
                 <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-2.5 py-1.5 text-xs font-semibold text-amber-700">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   Scheduled on duty now but offline
+                </div>
+              )}
+
+              {expiredLicense && (
+                <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  License expired — doctor can't log in
                 </div>
               )}
 
@@ -386,6 +544,20 @@ export default function AdminDoctors() {
               onChange={set("qualifications")}
             />
             <Input
+              label="Country / location"
+              list="country-options"
+              icon={<MapPin className="h-4 w-4" />}
+              placeholder="Select or type a country"
+              value={form.country}
+              onChange={set("country")}
+              hint="Pick from the list or type your own"
+            />
+            <datalist id="country-options">
+              {COUNTRIES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <Input
               label="Consultation fee"
               type="number"
               value={form.fees}
@@ -421,6 +593,90 @@ export default function AdminDoctors() {
               />
             </div>
           </div>
+
+          <div className="rounded-2xl border border-surface-muted bg-surface-subtle p-4">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-brand-500" />
+                <h4 className="text-sm font-bold text-ink">Medical licenses</h4>
+              </div>
+              <Button type="button" size="sm" variant="outline" onClick={addLicense}>
+                <Plus className="h-3.5 w-3.5" /> Add license
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-ink-muted">
+              Upload verified license(s)/certification(s) with their expiry date.
+              Once a license expires the doctor is signed out and can't log back
+              in until you renew or remove it. Patients see a "Verified" badge
+              while at least one license is current.
+            </p>
+
+            {form.licenses.length === 0 ? (
+              <p className="mt-3 text-xs italic text-ink-muted">
+                No licenses added yet.
+              </p>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {form.licenses.map((lic) => {
+                  const expired = !!lic.expiryDate && isLicenseExpired(lic);
+                  return (
+                    <div
+                      key={lic.id}
+                      className="rounded-xl border border-surface-muted bg-surface p-3"
+                    >
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <Input
+                          label="License / certificate name"
+                          placeholder="e.g. PMC Medical License"
+                          value={lic.title}
+                          onChange={(e) =>
+                            updateLicense(lic.id, { title: e.target.value })
+                          }
+                        />
+                        <Input
+                          label="License number (optional)"
+                          value={lic.licenseNumber ?? ""}
+                          onChange={(e) =>
+                            updateLicense(lic.id, { licenseNumber: e.target.value })
+                          }
+                        />
+                        <Input
+                          label="Expiry date"
+                          type="date"
+                          value={lic.expiryDate}
+                          onChange={(e) =>
+                            updateLicense(lic.id, { expiryDate: e.target.value })
+                          }
+                        />
+                        <LicenseDocUpload
+                          value={lic.documentUrl}
+                          onUploaded={(url) => updateLicense(lic.id, { documentUrl: url })}
+                        />
+                      </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        {lic.expiryDate ? (
+                          <Badge tone={expired ? "red" : "green"}>
+                            {expired ? "Expired" : "Valid until"} {formatDate(lic.expiryDate)}
+                          </Badge>
+                        ) : (
+                          <span />
+                        )}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="text-rose-500 hover:bg-rose-50"
+                          onClick={() => removeLicense(lic.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" /> Remove
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </Modal>
 
@@ -429,9 +685,13 @@ export default function AdminDoctors() {
         onClose={() => setRemoveTarget(null)}
         onConfirm={remove}
         loading={busy}
-        title="Remove doctor?"
-        message={`This deletes ${removeTarget?.name}'s profile. Their login record in Firebase Auth should be removed from the console.`}
-        confirmLabel="Remove"
+        title="Delete doctor?"
+        message={
+          isAuthDeleteConfigured
+            ? `This permanently deletes ${removeTarget?.name}'s login and profile. This cannot be undone.`
+            : `This deletes ${removeTarget?.name}'s profile. Their login record in Firebase Auth should be removed from the console.`
+        }
+        confirmLabel="Delete"
       />
     </div>
   );

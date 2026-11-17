@@ -5,12 +5,8 @@ import {
   updateProfile,
   signOut,
 } from "firebase/auth";
-import {
-  getFirestore,
-  doc,
-  setDoc,
-  serverTimestamp,
-} from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { db } from "./firebase";
 import * as demo from "./demo/backend";
 import type { DoctorLicense } from "@/types";
 
@@ -80,7 +76,6 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
   }
   const secondary = initializeApp(secondaryConfig, `secondary-${Date.now()}`);
   const secondaryAuth = getAuth(secondary);
-  const secondaryDb = getFirestore(secondary);
   try {
     const cred = await createUserWithEmailAndPassword(
       secondaryAuth,
@@ -90,10 +85,9 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
     await updateProfile(cred.user, { displayName: input.name });
     const uid = cred.user.uid;
 
-    // Write the doctor's records using the NEW DOCTOR'S OWN session
-    // (the secondary app is signed in as them). This satisfies the security
-    // rules — a user may create their own `users` doc and their own `doctors`
-    // doc — without the admin needing write access to another user's record.
+    // Write the doctor's records with the ADMIN'S session (primary `db`).
+    // The security rules only let an admin create doctor profiles or grant a
+    // non-patient role, so a regular user can never promote themselves.
     const doctorProfile = {
       role: "doctor",
       name: input.name,
@@ -116,11 +110,11 @@ export async function createDoctorAccount(input: NewDoctorInput): Promise<void> 
       createdAt: serverTimestamp(),
     };
 
-    await setDoc(doc(secondaryDb, "doctors", uid), doctorProfile, {
+    await setDoc(doc(db, "doctors", uid), doctorProfile, {
       merge: true,
     });
     await setDoc(
-      doc(secondaryDb, "users", uid),
+      doc(db, "users", uid),
       {
         role: "doctor",
         name: input.name,

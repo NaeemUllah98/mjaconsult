@@ -28,10 +28,19 @@ service cloud.firestore {
     match /users/{userId} {
       // Anyone signed in can read basic user records (needed for chat names).
       allow read: if isSignedIn();
-      // A user can create/update their own record; admins can manage all
-      // (admins create user records when adding doctors).
-      allow create: if isSignedIn() && (request.auth.uid == userId || isAdmin());
-      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // A user may create their own record only as an active patient, and may
+      // edit their own profile but never their `role` or `active` flag — so
+      // nobody can promote themselves to admin/doctor or undo a deactivation.
+      // Admins manage every field (including creating doctor records).
+      allow create: if isAdmin() || (
+        isSignedIn() && request.auth.uid == userId &&
+        request.resource.data.role == 'patient' &&
+        request.resource.data.get('active', true) == true
+      );
+      allow update: if isAdmin() || (
+        isSignedIn() && request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role', 'active'])
+      );
       allow delete: if isAdmin();
     }
 
@@ -39,7 +48,8 @@ service cloud.firestore {
     match /doctors/{doctorId} {
       // Public: patients browse doctors without restriction.
       allow read: if true;
-      allow create: if isSignedIn() && (request.auth.uid == doctorId || isAdmin());
+      // Only admins create doctor profiles (see src/lib/adminAccounts.ts).
+      allow create: if isAdmin();
       // Admins manage every field. A doctor may only touch their own live
       // scheduling/presence fields (availability, slot length, timezone,
       // online heartbeat) — credentials, fees, licenses and active status
@@ -134,6 +144,36 @@ service cloud.firestore {
     match /settings/{docId} {
       allow read: if isSignedIn() || docId == "site" || docId == "banners";
       allow write: if isAdmin();      // only admins edit
+    }
+
+    // ---- blog posts --------------------------------------------
+    // Public articles: readable by anyone (including search-engine crawlers,
+    // which is the whole point), writable only by admins.
+    match /blogs/{blogId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ---- contact form submissions ------------------------------
+    // Anyone — including signed-out visitors — may submit the public contact
+    // form, but only admins may read or manage the resulting inbox. The
+    // create rule pins the shape and caps field lengths so an open endpoint
+    // can't be used to write arbitrary or oversized documents.
+    match /contactMessages/{msgId} {
+      allow create: if
+        request.resource.data.keys().hasOnly(
+          ['name', 'email', 'phone', 'subject', 'message', 'read', 'emailed', 'createdAt']
+        ) &&
+        request.resource.data.name is string &&
+        request.resource.data.name.size() > 0 &&
+        request.resource.data.name.size() <= 120 &&
+        request.resource.data.email is string &&
+        request.resource.data.email.size() <= 200 &&
+        request.resource.data.message is string &&
+        request.resource.data.message.size() > 0 &&
+        request.resource.data.message.size() <= 5000 &&
+        request.resource.data.read == false;
+      allow read, update, delete: if isAdmin();
     }
 
     // ---- notifications -----------------------------------------

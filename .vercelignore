@@ -1,0 +1,8 @@
+.env
+.env.*
+!.env.example
+*.zip
+*.docx
+worker
+node_modules
+dist
